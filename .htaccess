@@ -1,0 +1,13 @@
+RewriteEngine On
+
+# Skip rewriting for existing files or directories
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Skip rewriting for the PHP API under /public/
+RewriteCond %{REQUEST_URI} ^/public/
+RewriteRule ^ - [L]
+
+# Redirect everything else to React's index.html
+RewriteRule ^ index.html [L]
