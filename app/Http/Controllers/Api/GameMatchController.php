@@ -31,19 +31,44 @@ class GameMatchController extends Controller
             'all_sessions' => session()->all()
         ]);
         
-        // Build the query
-        $query = \App\Models\GameMatch::with('teams')->whereNull('deleted_at');
+        // Build the query using hard deletes (no soft delete filtering)
+        // Use raw SQL to bypass any global scoping that might add deleted_at filters
+        $sql = "SELECT * FROM matches";
+        $bindings = [];
         
-        // Filter by team_id if provided and not null/empty
-        if ($teamId && $teamId !== 'null' && $teamId !== '') {
-            $query->where('team_id', $teamId);
-            \Log::info('Filtering matches by team_id', ['team_id' => $teamId]);
-        } else {
-            \Log::info('No team_id provided or team_id is null/empty, returning all matches');
+        if ($teamId) {
+            $sql .= " WHERE team_id = ?";
+            $bindings[] = $teamId;
         }
         
-        // Get matches ordered by date (oldest first)
-        $matches = $query->orderBy('match_date', 'asc')->get();
+        $sql .= " ORDER BY match_date ASC";
+        
+        // Debug: Log the raw SQL query
+        \Log::info('Raw SQL query to be executed', [
+            'sql' => $sql,
+            'bindings' => $bindings,
+            'team_id' => $teamId
+        ]);
+        
+        // Execute raw query to bypass Eloquent's global scoping
+        $matches = \DB::select($sql, $bindings);
+        
+        // Convert to collection for consistency
+        $matches = collect($matches);
+        
+        // Load teams relationship manually since we're using raw SQL
+        if ($matches->isNotEmpty()) {
+            $matchIds = $matches->pluck('id')->toArray();
+            $teams = \DB::select("SELECT * FROM match_teams WHERE match_id IN (" . implode(',', array_fill(0, count($matchIds), '?')) . ")", $matchIds);
+            
+            // Group teams by match_id
+            $teamsByMatch = collect($teams)->groupBy('match_id');
+            
+            // Attach teams to each match
+            $matches->each(function($match) use ($teamsByMatch) {
+                $match->teams = $teamsByMatch->get($match->id, []);
+            });
+        }
         
         \Log::info('Matches returned', [
             'count' => $matches->count(),
@@ -156,13 +181,20 @@ class GameMatchController extends Controller
             // Find the match
             $match = GameMatch::findOrFail($id);
             
-            // Soft delete the match (keeps data for statistics)
-            $match->deleted_at = now();
-            $match->save();
+            // Delete related match_teams first to satisfy foreign key constraints
+            $match->teams()->delete();
             
-            return response()->json(['message' => 'Match archived successfully. Data preserved for statistics.'], 200);
+            // Hard delete the match
+            $match->delete();
+            
+            return response()->noContent();
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to archive match: ' . $e->getMessage()], 500);
+            \Log::error('GameMatchController::destroy error', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json(['error' => 'Failed to delete match: ' . $e->getMessage()], 500);
         }
     }
 }

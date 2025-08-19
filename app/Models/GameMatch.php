@@ -20,6 +20,45 @@ class GameMatch extends Model
         'team_id'
     ];
 
+    /**
+     * Boot the model to ensure no soft delete logic is applied
+     */
+    protected static function boot()
+    {
+        parent::boot();
+    }
+
+    /**
+     * Override the newQuery method to ensure no soft delete scoping is applied
+     */
+    public function newQuery()
+    {
+        // Create a completely fresh query without any global scoping
+        $query = new \Illuminate\Database\Eloquent\Builder(
+            new \Illuminate\Database\Query\Builder(
+                $this->getConnection(),
+                $this->getConnection()->getQueryGrammar(),
+                $this->getConnection()->getPostProcessor()
+            )
+        );
+        
+        // Set the model instance
+        $query->setModel($this);
+        
+        // Set the table
+        $query->from($this->getTable());
+        
+        return $query;
+    }
+
+    /**
+     * Scope to ensure no soft delete filtering is applied
+     */
+    public function scopeWithoutSoftDeletes($query)
+    {
+        return $query;
+    }
+
     // Relationship to teams
     public function teams()
     {
