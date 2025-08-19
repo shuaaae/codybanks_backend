@@ -14,70 +14,31 @@ class GameMatchController extends Controller
      */
     public function index(Request $request)
     {
-        // Get team_id from query parameter (frontend sends this)
-        $teamId = $request->query('team_id');
-        
-        // Fallback to session if no query parameter
-        if (!$teamId) {
-            $teamId = session('active_team_id');
+        try {
+            $teamId = $request->query('team_id');
+            $teamId = is_numeric($teamId) ? (int) $teamId : null;
+
+            $q = \App\Models\GameMatch::query()
+                ->select(['id','team_id','match_date','winner','turtle_taken','lord_taken','notes','playstyle'])
+                ->with([
+                    'teams:id,match_id,team,team_color,banning_phase1,picks1,banning_phase2,picks2',
+                ]);
+
+            if ($teamId !== null) {
+                $q->where('team_id', $teamId);
+            }
+
+            $matches = $q->orderBy('match_date', 'asc')->get();
+
+            return response()->json($matches);
+        } catch (\Throwable $e) {
+            \Log::error('GET /api/matches failed', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+            return response()->json(['error' => $e->getMessage()], 500);
         }
-        
-        // Debug logging
-        \Log::info('GameMatchController::index called', [
-            'query_team_id' => $request->query('team_id'),
-            'session_team_id' => session('active_team_id'),
-            'final_team_id' => $teamId,
-            'session_id' => session()->getId(),
-            'all_sessions' => session()->all()
-        ]);
-        
-        // Build the query using hard deletes (no soft delete filtering)
-        // Use raw SQL to bypass any global scoping that might add deleted_at filters
-        $sql = "SELECT * FROM matches";
-        $bindings = [];
-        
-        if ($teamId) {
-            $sql .= " WHERE team_id = ?";
-            $bindings[] = $teamId;
-        }
-        
-        $sql .= " ORDER BY match_date ASC";
-        
-        // Debug: Log the raw SQL query
-        \Log::info('Raw SQL query to be executed', [
-            'sql' => $sql,
-            'bindings' => $bindings,
-            'team_id' => $teamId
-        ]);
-        
-        // Execute raw query to bypass Eloquent's global scoping
-        $matches = \DB::select($sql, $bindings);
-        
-        // Convert to collection for consistency
-        $matches = collect($matches);
-        
-        // Load teams relationship manually since we're using raw SQL
-        if ($matches->isNotEmpty()) {
-            $matchIds = $matches->pluck('id')->toArray();
-            $teams = \DB::select("SELECT * FROM match_teams WHERE match_id IN (" . implode(',', array_fill(0, count($matchIds), '?')) . ")", $matchIds);
-            
-            // Group teams by match_id
-            $teamsByMatch = collect($teams)->groupBy('match_id');
-            
-            // Attach teams to each match
-            $matches->each(function($match) use ($teamsByMatch) {
-                $match->teams = $teamsByMatch->get($match->id, []);
-            });
-        }
-        
-        \Log::info('Matches returned', [
-            'count' => $matches->count(),
-            'team_ids' => $matches->pluck('team_id')->unique()->toArray(),
-            'filtered_by_team_id' => $teamId,
-            'first_match' => $matches->first() ? $matches->first()->toArray() : null
-        ]);
-        
-        return response()->json($matches);
     }
 
     /**
@@ -167,7 +128,7 @@ class GameMatchController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, string $id)
+    public function update(string $id)
     {
         //
     }
