@@ -20,6 +20,9 @@ class GameMatch extends Model
         'team_id'
     ];
 
+    // Ensure timestamps are automatically updated
+    public $timestamps = true;
+
     // Relationship to teams
     public function teams()
     {

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\GameMatch;
 use App\Models\MatchTeam;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class GameMatchController extends Controller
 {
@@ -128,9 +129,74 @@ class GameMatchController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(string $id)
+    public function update(Request $request, string $id)
     {
-        //
+        try {
+            $match = GameMatch::findOrFail($id);
+            
+            // Log the incoming request for debugging
+            \Log::info('Updating match', [
+                'match_id' => $id,
+                'request_data' => $request->all(),
+                'current_match_data' => $match->toArray(),
+                'team_id_header' => $request->header('X-Active-Team-ID'),
+                'all_headers' => $request->headers->all()
+            ]);
+
+        $validated = $request->validate([
+            'match_date'   => ['required','date'],
+            'winner'       => ['required','string'],
+            'turtle_taken' => ['nullable','string'],
+            'lord_taken'   => ['nullable','string'],
+            'notes'        => ['nullable','string'],
+            'playstyle'    => ['nullable','string'],
+            // teams payload is required for editing in this app
+            'teams'                    => ['required','array','size:2'],
+            'teams.*.team'             => ['required','string'],
+            'teams.*.team_color'       => ['required','in:blue,red'],
+            'teams.*.banning_phase1'   => ['required','array'],
+            'teams.*.banning_phase2'   => ['required','array'],
+            'teams.*.picks1'           => ['required','array'],
+            'teams.*.picks2'           => ['required','array'],
+        ]);
+
+        return DB::transaction(function () use ($match, $validated) {
+            // Update parent row
+            $match->update([
+                'match_date'   => $validated['match_date'],
+                'winner'       => $validated['winner'],
+                'turtle_taken' => $validated['turtle_taken'] ?? null,
+                'lord_taken'   => $validated['lord_taken'] ?? null,
+                'notes'        => $validated['notes'] ?? null,
+                'playstyle'    => $validated['playstyle'] ?? null,
+            ]);
+
+            // Recreate children
+            $match->teams()->delete();
+            foreach ($validated['teams'] as $t) {
+                $t['match_id'] = $match->id;
+                MatchTeam::create($t);
+            }
+
+            // Return the fresh match with its new teams
+            $match->load([
+                'teams:id,match_id,team,team_color,banning_phase1,banning_phase2,picks1,picks2'
+            ]);
+
+            return response()->json($match, 200);
+        });
+        
+        } catch (\Exception $e) {
+            \Log::error('GameMatchController::update error', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'error' => 'Failed to update match',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

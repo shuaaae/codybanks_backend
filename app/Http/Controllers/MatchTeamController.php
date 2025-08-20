@@ -36,7 +36,26 @@ public function index()
      */
     public function update(Request $request, string $id)
     {
-        //
+        try {
+            $matchTeam = MatchTeam::findOrFail($id);
+            
+            $validated = $request->validate([
+                'team' => 'required|string',
+                'team_color' => 'required|in:blue,red',
+                'banning_phase1' => 'required|array',
+                'banning_phase2' => 'required|array',
+                'picks1' => 'required|array',
+                'picks2' => 'required|array',
+            ]);
+            
+            $matchTeam->update($validated);
+            
+            return response()->json(['message' => 'Match team updated successfully.'], 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['errors' => $e->errors()], 422);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Failed to update match team.'], 500);
+        }
     }
 
     /**

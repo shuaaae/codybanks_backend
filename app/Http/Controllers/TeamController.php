@@ -58,12 +58,14 @@ class TeamController extends Controller
 
         $team = Team::findOrFail($teamId);
         
-        // Store active team in session or cache
+        // Store active team in session
         session(['active_team_id' => $team->id]);
         
+        // Also return the team ID in the response for frontend to use in headers
         return response()->json([
             'message' => 'Team set as active',
-            'team' => $team
+            'team' => $team,
+            'team_id' => $team->id
         ]);
     }
 
@@ -72,7 +74,20 @@ class TeamController extends Controller
      */
     public function getActive(): JsonResponse
     {
+        // First try to get from session
         $activeTeamId = session('active_team_id');
+        
+        // If no session, try to get from request header (for frontend compatibility)
+        if (!$activeTeamId) {
+            $activeTeamId = request()->header('X-Active-Team-ID');
+        }
+        
+        // Log for debugging
+        \Log::info('getActive called', [
+            'session_team_id' => session('active_team_id'),
+            'header_team_id' => request()->header('X-Active-Team-ID'),
+            'final_team_id' => $activeTeamId
+        ]);
         
         if (!$activeTeamId) {
             return response()->json(['message' => 'No active team'], 404);
