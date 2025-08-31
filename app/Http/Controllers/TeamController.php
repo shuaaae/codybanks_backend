@@ -3,8 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Team;
+
+use App\Models\Player;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 
 class TeamController extends Controller
 {
@@ -18,6 +21,22 @@ class TeamController extends Controller
     }
 
     /**
+     * Get a specific team by ID
+     */
+    public function show($id): JsonResponse
+    {
+        try {
+            $team = Team::findOrFail($id);
+            return response()->json($team);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['error' => 'Team not found'], 404);
+        } catch (\Exception $e) {
+            \Log::error('Error fetching team: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to fetch team'], 500);
+        }
+    }
+
+    /**
      * Store a new team
      */
     public function store(Request $request): JsonResponse
@@ -28,13 +47,281 @@ class TeamController extends Controller
             'logo_path' => 'nullable|string'
         ]);
 
-        $team = Team::create([
-            'name' => $request->name,
-            'logo_path' => $request->logo_path,
-            'players_data' => $request->players
+        try {
+            \Log::info('Creating team with players data:', [
+                'team_name' => $request->name,
+                'players_count' => count($request->players),
+                'players_data' => $request->players
+            ]);
+
+            // Create the team first
+            $team = Team::create([
+                'name' => $request->name,
+                'logo_path' => $request->logo_path,
+                'players_data' => $request->players
+            ]);
+
+            // Create individual Player records for each player
+            $createdPlayers = [];
+            $skippedPlayers = [];
+            
+            foreach ($request->players as $index => $playerData) {
+                // Ensure player has a name
+                if (empty($playerData['name'])) {
+                    \Log::warning('Skipping player with no name at index ' . $index, $playerData);
+                    $skippedPlayers[] = ['index' => $index, 'reason' => 'No name', 'data' => $playerData];
+                    continue;
+                }
+                
+                // If role is missing, assign a default role based on position
+                $role = $playerData['role'];
+                if (empty($role)) {
+                    // Assign default roles based on position for the first 5 players
+                    $defaultRoles = ['exp', 'mid', 'jungler', 'gold', 'roam'];
+                    if ($index < count($defaultRoles)) {
+                        $role = $defaultRoles[$index];
+                        \Log::info('Assigned default role for player at index ' . $index . ': ' . $role);
+                    } else {
+                        $role = 'substitute'; // Default for additional players
+                        \Log::info('Assigned substitute role for additional player at index ' . $index);
+                    }
+                } else {
+                    // Normalize role to ensure consistency
+                    $role = $this->normalizeRole($role);
+                }
+                
+                // Create the player record
+                $player = Player::create([
+                    'name' => $playerData['name'],
+                    'role' => $role,
+                    'team_id' => $team->id
+                ]);
+                $createdPlayers[] = $player;
+                \Log::info('Created player record with normalized role:', [
+                    'name' => $playerData['name'],
+                    'original_role' => $playerData['role'] ?? 'null',
+                    'normalized_role' => $role,
+                    'player_id' => $player->id
+                ]);
+            }
+            
+            // Update the team's players_data with the corrected roles
+            $correctedPlayersData = [];
+            foreach ($request->players as $index => $playerData) {
+                if ($index < count($createdPlayers)) {
+                    $correctedPlayersData[] = [
+                        'name' => $playerData['name'],
+                        'role' => $createdPlayers[$index]->role
+                    ];
+                } else {
+                    $correctedPlayersData[] = $playerData;
+                }
+            }
+            
+            // Update the team with corrected player data
+            $team->update(['players_data' => $correctedPlayersData]);
+
+            \Log::info('Team created successfully with players', [
+                'team_id' => $team->id,
+                'team_name' => $team->name,
+                'players_count' => count($request->players),
+                'created_players_count' => count($createdPlayers)
+            ]);
+
+            return response()->json($team, 201);
+        } catch (\Exception $e) {
+            \Log::error('Error creating team: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            return response()->json(['error' => 'Failed to create team: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Sync existing team players to individual Player records
+     */
+    public function syncTeamPlayers(Request $request): JsonResponse
+    {
+        $request->validate([
+            'team_id' => 'required|exists:teams,id'
         ]);
 
-        return response()->json($team, 201);
+        $team = Team::findOrFail($request->team_id);
+        $playersData = $team->players_data ?? [];
+        
+        if (empty($playersData)) {
+            return response()->json([
+                'message' => 'No players data found for this team',
+                'synced_count' => 0
+            ]);
+        }
+
+        \Log::info('Syncing team players', [
+            'team_id' => $team->id,
+            'team_name' => $team->name,
+            'players_count' => count($playersData),
+            'players_data' => $playersData
+        ]);
+
+        $syncedCount = 0;
+        $updatedCount = 0;
+        $errors = [];
+        
+        foreach ($playersData as $index => $playerData) {
+            try {
+                // Ensure player has a name
+                if (empty($playerData['name'])) {
+                    $errors[] = "Player at index {$index} has no name";
+                    continue;
+                }
+                
+                // If role is missing, assign a default role based on position
+                $role = $playerData['role'];
+                if (empty($role)) {
+                    // Assign default roles based on position for the first 5 players
+                    $defaultRoles = ['exp', 'mid', 'jungler', 'gold', 'roam'];
+                    if ($index < count($defaultRoles)) {
+                        $role = $defaultRoles[$index];
+                        \Log::info("Assigned default role '{$role}' for player '{$playerData['name']}' at index {$index}");
+                    } else {
+                        $role = 'substitute'; // Default for additional players
+                        \Log::info("Assigned substitute role for additional player '{$playerData['name']}' at index {$index}");
+                    }
+                } else {
+                    // Normalize role to ensure consistency
+                    $role = $this->normalizeRole($role);
+                }
+                
+                // Check if player already exists
+                $existingPlayer = Player::where('name', $playerData['name'])
+                    ->where('team_id', $team->id)
+                    ->first();
+                
+                if ($existingPlayer) {
+                    // Update existing player if role is different
+                    if ($existingPlayer->role !== $role) {
+                        $existingPlayer->update(['role' => $role]);
+                        $updatedCount++;
+                        \Log::info("Updated existing player '{$playerData['name']}' role from '{$existingPlayer->role}' to '{$role}'");
+                    }
+                } else {
+                    // Create new player record
+                    Player::create([
+                        'name' => $playerData['name'],
+                        'role' => $role,
+                        'team_id' => $team->id
+                    ]);
+                    $syncedCount++;
+                    \Log::info("Created new player record for '{$playerData['name']}' with normalized role '{$role}' (original: '{$playerData['role']}')");
+                }
+            } catch (\Exception $e) {
+                $errors[] = "Error processing player '{$playerData['name']}': " . $e->getMessage();
+                \Log::error("Error syncing player '{$playerData['name']}' : " . $e->getMessage());
+            }
+        }
+        
+        // Update the team's players_data with corrected roles if any were assigned
+        $correctedPlayersData = [];
+        foreach ($playersData as $index => $playerData) {
+            $correctedPlayersData[] = [
+                'name' => $playerData['name'],
+                'role' => $playerData['role'] ?: ($index < 5 ? ['exp', 'mid', 'jungler', 'gold', 'roam'][$index] : 'substitute')
+            ];
+        }
+        
+        if ($correctedPlayersData !== $playersData) {
+            $team->update(['players_data' => $correctedPlayersData]);
+            \Log::info("Updated team players_data with corrected roles");
+        }
+
+        return response()->json([
+            'message' => 'Team players synced successfully',
+            'synced_count' => $syncedCount,
+            'updated_count' => $updatedCount,
+            'errors' => $errors,
+            'total_processed' => count($playersData)
+        ]);
+    }
+
+    /**
+     * Test role normalization
+     */
+    public function testRoleNormalization(Request $request): JsonResponse
+    {
+        $testRoles = [
+            'jungler', 'Jungler', 'JUNGLER', 'jungle', 'Jungle', 'JUNGLE',
+            'mid', 'Mid', 'MID', 'midlaner', 'Mid Laner', 'MIDLANER',
+            'exp', 'Exp', 'EXP', 'explane', 'Explane', 'EXPLANE',
+            'gold', 'Gold', 'GOLD', 'adc', 'ADC', 'marksman',
+            'roam', 'Roam', 'ROAM', 'support', 'Support', 'SUPPORT',
+            'sub', 'Sub', 'SUB', 'substitute', 'Substitute', 'SUBSTITUTE'
+        ];
+
+        $normalizedRoles = [];
+        foreach ($testRoles as $role) {
+            $normalizedRoles[$role] = $this->normalizeRole($role);
+        }
+
+        return response()->json([
+            'message' => 'Role normalization test results',
+            'test_roles' => $testRoles,
+            'normalized_roles' => $normalizedRoles
+        ]);
+    }
+
+    /**
+     * Normalize role values to ensure consistency
+     */
+    private function normalizeRole($role)
+    {
+        if (empty($role)) {
+            return $role;
+        }
+
+        $role = strtolower(trim($role));
+        
+        // Map various role formats to standard ones
+        $roleMap = [
+            // Standard roles
+            'exp' => 'exp',
+            'mid' => 'mid',
+            'jungler' => 'jungler',
+            'gold' => 'gold',
+            'roam' => 'roam',
+            'sub' => 'substitute',
+            'substitute' => 'substitute',
+            
+            // Common variations
+            'explane' => 'exp',
+            'explaner' => 'exp',
+            'top' => 'exp',
+            'top_laner' => 'exp',
+            'toplaner' => 'exp',
+            
+            'midlane' => 'mid',
+            'mid_laner' => 'mid',
+            'midlaner' => 'mid',
+            'middle' => 'mid',
+            
+            'jungle' => 'jungler',
+            'jungler' => 'jungler',
+            
+            'adc' => 'gold',
+            'marksman' => 'gold',
+            'gold_lane' => 'gold',
+            'goldlane' => 'gold',
+            'carry' => 'gold',
+            
+            'support' => 'roam',
+            'roamer' => 'roam',
+            'roam_lane' => 'roam',
+            'roamlane' => 'roam',
+            
+            'backup' => 'substitute',
+            'reserve' => 'substitute',
+            'sub' => 'substitute'
+        ];
+        
+        return $roleMap[$role] ?? $role;
     }
 
     /**
@@ -42,31 +329,57 @@ class TeamController extends Controller
      */
     public function setActive(Request $request): JsonResponse
     {
-        $teamId = $request->input('team_id');
-        
-        if ($teamId === null || $teamId === 'null') {
-            // Clear active team
-            session()->forget('active_team_id');
-            return response()->json([
-                'message' => 'Active team cleared'
+        try {
+            \Log::info('setActive called', [
+                'request_data' => $request->all(),
+                'team_id' => $request->input('team_id'),
+                'session_id' => session()->getId()
             ]);
-        }
-        
-        $request->validate([
-            'team_id' => 'required|exists:teams,id'
-        ]);
+            
+            $teamId = $request->input('team_id');
+            
+            if ($teamId === null || $teamId === 'null') {
+                // Clear active team from session
+                session()->forget('active_team_id');
+                
+                \Log::info('Active team cleared from session');
+                return response()->json([
+                    'message' => 'Active team cleared'
+                ]);
+            }
+            
+            $request->validate([
+                'team_id' => 'required|exists:teams,id'
+            ]);
 
-        $team = Team::findOrFail($teamId);
-        
-        // Store active team in session
-        session(['active_team_id' => $team->id]);
-        
-        // Also return the team ID in the response for frontend to use in headers
-        return response()->json([
-            'message' => 'Team set as active',
-            'team' => $team,
-            'team_id' => $team->id
-        ]);
+            $team = Team::findOrFail($teamId);
+            
+            // Simplified: Just store active team in session without database records
+            session(['active_team_id' => $team->id]);
+            
+            \Log::info('Active team set in session', [
+                'team_id' => $team->id,
+                'team_name' => $team->name,
+                'session_active_team_id' => session('active_team_id')
+            ]);
+            
+            // Also return the team ID in the response for frontend to use in headers
+            return response()->json([
+                'message' => 'Team set as active',
+                'team' => $team,
+                'team_id' => $team->id
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error in setActive: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'team_id' => $request->input('team_id')
+            ]);
+            
+            return response()->json([
+                'error' => 'Failed to set team as active: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -90,7 +403,25 @@ class TeamController extends Controller
         ]);
         
         if (!$activeTeamId) {
-            return response()->json(['message' => 'No active team'], 404);
+            // No active team found - try to get the latest team as fallback
+            \Log::info('No active team found, trying to get latest team as fallback');
+            
+            // Get the most recently created team for this user
+            $latestTeam = Team::orderBy('created_at', 'desc')->first();
+            
+            if ($latestTeam) {
+                \Log::info('Found latest team as fallback', ['team_id' => $latestTeam->id, 'team_name' => $latestTeam->name]);
+                
+                // Set this team as active for the current session
+                session(['active_team_id' => $latestTeam->id]);
+                
+
+                
+                return response()->json($latestTeam);
+            } else {
+                \Log::info('No teams found at all, returning 404');
+                return response()->json(['message' => 'No teams found'], 404);
+            }
         }
 
         $team = Team::find($activeTeamId);
@@ -99,7 +430,159 @@ class TeamController extends Controller
             return response()->json(['message' => 'Active team not found'], 404);
         }
 
+
+
         return response()->json($team);
+    }
+
+    /**
+     * Ensure all players in a team have individual database records
+     */
+    public function ensurePlayerRecords(Request $request): JsonResponse
+    {
+        $request->validate([
+            'team_id' => 'required|exists:teams,id'
+        ]);
+
+        $team = Team::findOrFail($request->team_id);
+        $playersData = $team->players_data ?? [];
+        
+        if (empty($playersData)) {
+            return response()->json([
+                'message' => 'No players data found for this team',
+                'ensured_count' => 0
+            ]);
+        }
+
+        \Log::info('Ensuring player records exist for team', [
+            'team_id' => $team->id,
+            'team_name' => $team->name,
+            'players_count' => count($playersData)
+        ]);
+
+        $ensuredCount = 0;
+        $errors = [];
+        
+        foreach ($playersData as $index => $playerData) {
+            try {
+                // Ensure player has a name
+                if (empty($playerData['name'])) {
+                    $errors[] = "Player at index {$index} has no name";
+                    continue;
+                }
+                
+                // If role is missing, assign a default role based on position
+                $role = $playerData['role'];
+                if (empty($role)) {
+                    // Assign default roles based on position for the first 5 players
+                    $defaultRoles = ['exp', 'mid', 'jungler', 'gold', 'roam'];
+                    if ($index < count($defaultRoles)) {
+                        $role = $defaultRoles[$index];
+                        \Log::info("Assigned default role '{$role}' for player '{$playerData['name']}' at index {$index}");
+                    } else {
+                        $role = 'substitute'; // Default for additional players
+                        \Log::info("Assigned substitute role for additional player '{$playerData['name']}' at index {$index}");
+                    }
+                } else {
+                    // Normalize role to ensure consistency
+                    $role = $this->normalizeRole($role);
+                }
+                
+                // Check if player already exists
+                $existingPlayer = Player::where('name', $playerData['name'])
+                    ->where('team_id', $team->id)
+                    ->first();
+                
+                if (!$existingPlayer) {
+                    // Create new player record
+                    Player::create([
+                        'name' => $playerData['name'],
+                        'role' => $role,
+                        'team_id' => $team->id
+                    ]);
+                    $ensuredCount++;
+                    \Log::info("Created new player record for '{$playerData['name']}' with role '{$role}'");
+                } else {
+                    // Update existing player if role is different
+                    if ($existingPlayer->role !== $role) {
+                        $existingPlayer->update(['role' => $role]);
+                        \Log::info("Updated existing player '{$playerData['name']}' role to '{$role}'");
+                    }
+                }
+            } catch (\Exception $e) {
+                $errors[] = "Error processing player '{$playerData['name']}': " . $e->getMessage();
+                \Log::error("Error ensuring player record for '{$playerData['name']}' : " . $e->getMessage());
+            }
+        }
+        
+        // Update the team's players_data with corrected roles if any were assigned
+        $correctedPlayersData = [];
+        foreach ($playersData as $index => $playerData) {
+            $correctedPlayersData[] = [
+                'name' => $playerData['name'],
+                'role' => $playerData['role'] ?: ($index < 5 ? ['exp', 'mid', 'jungler', 'gold', 'roam'][$index] : 'substitute')
+            ];
+        }
+        
+        if ($correctedPlayersData !== $playersData) {
+            $team->update(['players_data' => $correctedPlayersData]);
+            \Log::info("Updated team players_data with corrected roles");
+        }
+
+        return response()->json([
+            'message' => 'Player records ensured successfully',
+            'ensured_count' => $ensuredCount,
+            'errors' => $errors,
+            'total_processed' => count($playersData)
+        ]);
+    }
+
+    /**
+     * Check if a team is available (not active by another session)
+     */
+    public function checkAvailability(Request $request): JsonResponse
+    {
+        $teamId = $request->input('team_id');
+        
+        if (!$teamId) {
+            return response()->json(['error' => 'Team ID is required'], 400);
+        }
+        
+        $team = Team::find($teamId);
+        if (!$team) {
+            return response()->json(['error' => 'Team not found'], 404);
+        }
+        
+        // Since we removed session restrictions, all teams are always available
+        return response()->json([
+            'available' => true,
+            'message' => 'Team is available (no session restrictions)',
+            'team_name' => $team->name
+        ]);
+    }
+
+    /**
+     * Check if the current user's session is active for a specific team
+     */
+    public function checkMySession(Request $request): JsonResponse
+    {
+        $teamId = $request->input('team_id');
+        
+        if (!$teamId) {
+            return response()->json(['error' => 'Team ID is required'], 400);
+        }
+        
+        $team = Team::find($teamId);
+        if (!$team) {
+            return response()->json(['error' => 'Team not found'], 404);
+        }
+        
+        // Since we removed session restrictions, always return that the team is available
+        return response()->json([
+            'my_session_active' => true,
+            'message' => 'Team is available (no session restrictions)',
+            'team_name' => $team->name
+        ]);
     }
 
     /**
@@ -115,7 +598,8 @@ class TeamController extends Controller
             'all_sessions' => $allSessions,
             'session_id' => session()->getId(),
             'teams_count' => Team::count(),
-            'all_teams' => Team::select('id', 'name')->get()
+            'all_teams' => Team::select('id', 'name')->get(),
+            'message' => 'Session restrictions removed - all teams are accessible'
         ]);
     }
 
@@ -162,6 +646,32 @@ class TeamController extends Controller
     }
 
     /**
+     * Check if team name exists
+     */
+    public function checkNameExists(Request $request): JsonResponse
+    {
+        $request->validate([
+            'name' => 'required|string|max:255'
+        ]);
+
+        $teamName = trim($request->input('name'));
+        
+        if (empty($teamName)) {
+            return response()->json([
+                'exists' => false,
+                'message' => 'Team name cannot be empty'
+            ], 400);
+        }
+
+        $existingTeam = Team::where('name', $teamName)->first();
+        
+        return response()->json([
+            'exists' => $existingTeam ? true : false,
+            'message' => $existingTeam ? 'Team name already exists' : 'Team name is available'
+        ]);
+    }
+
+    /**
      * Delete a team
      */
     public function destroy($id): JsonResponse
@@ -180,5 +690,57 @@ class TeamController extends Controller
         return response()->json([
             'message' => 'Team deleted successfully'
         ]);
+    }
+
+    /**
+     * Get active team for current session
+     */
+    public function getActiveTeam(Request $request): JsonResponse
+    {
+        try {
+            \Log::info('getActiveTeam called', [
+                'session_id' => session()->getId(),
+                'request_data' => $request->all()
+            ]);
+            
+            // Get active team ID from session
+            $activeTeamId = session('active_team_id');
+            
+            if (!$activeTeamId) {
+                // No active team found - try to get the latest team as fallback
+                \Log::info('No active team found, trying to get latest team as fallback');
+                
+                // Get the most recently created team for this user
+                $latestTeam = Team::orderBy('created_at', 'desc')->first();
+                
+                if ($latestTeam) {
+                    \Log::info('Found latest team as fallback', ['team_id' => $latestTeam->id, 'team_name' => $latestTeam->name]);
+                    
+                    // Simplified: Just set the team as active without complex session management
+                    session(['active_team_id' => $latestTeam->id]);
+                    
+                    return response()->json($latestTeam);
+                } else {
+                    \Log::info('No teams found at all, returning 404');
+                    return response()->json(['message' => 'No teams found'], 404);
+                }
+            }
+            
+            // Get the active team
+            $team = Team::find($activeTeamId);
+            
+            if (!$team) {
+                \Log::warning('Active team not found in database', ['active_team_id' => $activeTeamId]);
+                session()->forget('active_team_id');
+                return response()->json(['message' => 'Active team not found'], 404);
+            }
+            
+            \Log::info('Returning active team', ['team_id' => $team->id, 'team_name' => $team->name]);
+            return response()->json($team);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error in getActiveTeam: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to get active team: ' . $e->getMessage()], 500);
+        }
     }
 }

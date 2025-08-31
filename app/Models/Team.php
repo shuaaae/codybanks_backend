@@ -37,6 +37,11 @@ class Team extends Model
         return $this->hasMany(PlayerStat::class);
     }
 
+    public function activeSession()
+    {
+        return $this->hasOne(ActiveTeamSession::class);
+    }
+
     public function getPlayersAttribute()
     {
         return $this->players_data ?? [];

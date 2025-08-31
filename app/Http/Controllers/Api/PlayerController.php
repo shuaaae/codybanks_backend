@@ -14,8 +14,17 @@ class PlayerController extends Controller
             'photo' => 'required|image|max:2048', // 2MB max
         ]);
 
-        // Get the active team ID from session
+        // Get the active team ID from session or request header
         $activeTeamId = session('active_team_id');
+        
+        // If no session, try to get from request header (for frontend compatibility)
+        if (!$activeTeamId) {
+            $activeTeamId = $request->header('X-Active-Team-ID');
+        }
+
+        if (!$activeTeamId) {
+            return response()->json(['error' => 'No active team found'], 400);
+        }
         
         $player = Player::where('id', $playerId)
                        ->where('team_id', $activeTeamId)
@@ -39,8 +48,19 @@ class PlayerController extends Controller
             'playerName' => 'required|string',
         ]);
 
-        // Get the active team ID from session
+        // Get the active team ID from session or request header
         $activeTeamId = session('active_team_id');
+        
+        // If no session, try to get from request header (for frontend compatibility)
+        if (!$activeTeamId) {
+            $activeTeamId = $request->header('X-Active-Team-ID');
+        }
+        
+
+
+        if (!$activeTeamId) {
+            return response()->json(['error' => 'No active team found'], 400);
+        }
 
         if ($request->hasFile('photo')) {
             $file = $request->file('photo');
@@ -76,8 +96,17 @@ class PlayerController extends Controller
             'playerName' => 'required|string',
         ]);
 
-        // Get the active team ID from session
+        // Get the active team ID from session or request header
         $activeTeamId = session('active_team_id');
+        
+        // If no session, try to get from request header (for frontend compatibility)
+        if (!$activeTeamId) {
+            $activeTeamId = $request->header('X-Active-Team-ID');
+        }
+
+        if (!$activeTeamId) {
+            return response()->json(['error' => 'No active team found'], 404);
+        }
 
         $player = Player::where('name', $request->input('playerName'))
                        ->where('team_id', $activeTeamId)
@@ -92,10 +121,28 @@ class PlayerController extends Controller
         return response()->json(['error' => 'Player not found or no photo'], 404);
     }
 
-    public function index()
+    public function index(Request $request)
     {
-        // Get the active team ID from session
+        // Check if a specific team_id is requested
+        $teamId = $request->query('team_id');
+        
+        if ($teamId) {
+            // Return players for the specified team
+            return Player::where('team_id', $teamId)->get();
+        }
+        
+        // Get the active team ID from session or request header
         $activeTeamId = session('active_team_id');
+        
+        // If no session, try to get from request header (for frontend compatibility)
+        if (!$activeTeamId) {
+            $activeTeamId = request()->header('X-Active-Team-ID');
+        }
+
+        if (!$activeTeamId) {
+            // Return empty array instead of error when no active team
+            return response()->json([]);
+        }
         
         // Return only players for the active team
         return Player::where('team_id', $activeTeamId)->get();
@@ -103,8 +150,17 @@ class PlayerController extends Controller
 
     public function heroStats($playerName)
     {
-        // Get the active team ID from session
+        // Get the active team ID from session or request header
         $activeTeamId = session('active_team_id');
+        
+        // If no session, try to get from request header (for frontend compatibility)
+        if (!$activeTeamId) {
+            $activeTeamId = request()->header('X-Active-Team-ID');
+        }
+
+        if (!$activeTeamId) {
+            return response()->json(['error' => 'No active team found'], 404);
+        }
         
         // Get match_teams joined with matches, filtered by active team
         $matchTeams = \App\Models\MatchTeam::with(['match' => function($query) use ($activeTeamId) {
@@ -122,15 +178,81 @@ class PlayerController extends Controller
             $isWin = $team->team === $match->winner;
             // Combine picks1 and picks2
             $picks = array_merge($team->picks1 ?? [], $team->picks2 ?? []);
+            
+            // Debug logging for picks
+            \Log::info("Processing picks for player {$playerName}", [
+                'team' => $team->team,
+                'match_id' => $match->id,
+                'is_win' => $isWin,
+                'picks_count' => count($picks),
+                'picks_sample' => array_slice($picks, 0, 3) // Log first 3 picks
+            ]);
             foreach ($picks as $pick) {
-                // Support both {hero, player} and just hero string
-                if (is_array($pick) && isset($pick['hero']) && isset($pick['player']) && strtolower($pick['player']) === strtolower($playerName)) {
-                    $hero = $pick['hero'];
-                } elseif (is_string($pick) && strtolower($pick) === strtolower($playerName)) {
-                    $hero = $pick;
+                // Log each pick for debugging
+                \Log::info("Processing pick in heroStats", [
+                    'pick' => $pick,
+                    'pick_type' => gettype($pick),
+                    'playerName' => $playerName,
+                    'match_id' => $match->id,
+                    'team' => $team->team
+                ]);
+                
+                // Support both {hero, player} object and legacy string format
+                if (is_array($pick) && isset($pick['hero']) && isset($pick['player'])) {
+                    // Check if player is an object with name property
+                    if (is_object($pick['player']) && isset($pick['player']['name'])) {
+                        if (strtolower($pick['player']['name']) === strtolower($playerName)) {
+                            $hero = $pick['hero'];
+                            \Log::info("Hero matched for player object in heroStats", [
+                                'hero' => $hero,
+                                'pickPlayer' => $pick['player']['name'],
+                                'requestedPlayer' => $playerName
+                            ]);
+                        } else {
+                            \Log::info("Player mismatch - skipping in heroStats", [
+                                'pickPlayer' => $pick['player']['name'],
+                                'requestedPlayer' => $playerName
+                            ]);
+                            continue; // Skip if this pick doesn't belong to the requested player
+                        }
+                    } 
+                    // Check if player is a string
+                    elseif (is_string($pick['player'])) {
+                        if (strtolower($pick['player']) === strtolower($playerName)) {
+                            $hero = $pick['hero'];
+                            \Log::info("Hero matched for player string in heroStats", [
+                                'hero' => $hero,
+                                'pickPlayer' => $pick['player'],
+                                'requestedPlayer' => $playerName
+                            ]);
+                        } else {
+                            \Log::info("Player mismatch - skipping in heroStats", [
+                                'pickPlayer' => $pick['player'],
+                                'requestedPlayer' => $playerName
+                            ]);
+                            continue; // Skip if this pick doesn't belong to the requested player
+                        }
+                    } else {
+                        \Log::warning("Unrecognized player format in heroStats", [
+                            'pick' => $pick,
+                            'player' => $pick['player']
+                        ]);
+                        continue; // Skip if player format is unrecognized
+                    }
+                } elseif (is_string($pick)) {
+                    // CRITICAL: Legacy string format is dangerous - skip to prevent data mixing
+                    // String picks without player assignment can't be accurately attributed
+                    \Log::warning("Legacy string pick format detected - skipping to prevent data mixing", [
+                        'pick' => $pick,
+                        'playerName' => $playerName,
+                        'match_id' => $match->id,
+                        'team' => $team->team
+                    ]);
+                    continue; // Skip legacy format to prevent data mixing
                 } else {
-                    continue;
+                    continue; // Skip unrecognized pick format
                 }
+                
                 if (!isset($heroStats[$hero])) {
                     $heroStats[$hero] = ['win' => 0, 'lose' => 0, 'total' => 0];
                 }
@@ -156,13 +278,32 @@ class PlayerController extends Controller
         }
         // Sort by total desc
         usort($result, function($a, $b) { return $b['total'] <=> $a['total']; });
+        
+        // Log final results for debugging
+        \Log::info("Final hero stats for player {$playerName} in heroStats", [
+            'playerName' => $playerName,
+            'totalHeroes' => count($result),
+            'heroes' => $result,
+            'activeTeamId' => $activeTeamId
+        ]);
+        
         return response()->json($result);
     }
 
     public function heroStatsByTeam(Request $request, $playerName)
     {
-        // Get the active team ID from session
+        // Get the active team ID from session or request header
         $activeTeamId = session('active_team_id');
+        
+        // If no session, try to get from request header (for frontend compatibility)
+        if (!$activeTeamId) {
+            $activeTeamId = $request->header('X-Active-Team-ID');
+        }
+
+        if (!$activeTeamId) {
+            return response()->json(['error' => 'No active team found'], 404);
+        }
+        
         $teamName = $request->query('teamName');
         $role = $request->query('role'); // Get role parameter for unique player identification
         
@@ -174,17 +315,24 @@ class PlayerController extends Controller
             'role' => $role
         ]);
         
-        // Get match_teams joined with matches, filtered by team name or active team
+        // CRITICAL FIX: Always filter by the current team's ID to prevent data mixing
+        // Get match_teams joined with matches, filtered by the current team ID
         $query = \App\Models\MatchTeam::with('match');
         
-        if ($teamName) {
-            // Filter by team name if provided
-            $query->where('team', $teamName);
-        } else if ($activeTeamId) {
-            // Fallback to session team ID
+        // Always filter by the current team ID to ensure data isolation
+        if ($activeTeamId) {
             $query->whereHas('match', function($q) use ($activeTeamId) {
                 $q->where('team_id', $activeTeamId);
             });
+        } else {
+            // If no active team ID, return empty results to prevent data leakage
+            \Log::warning("No active team ID found, returning empty stats to prevent data mixing");
+            return response()->json([]);
+        }
+        
+        // Additional filter by team name if provided (for extra safety)
+        if ($teamName) {
+            $query->where('team', $teamName);
         }
         
         $matchTeams = $query->get();
@@ -201,25 +349,80 @@ class PlayerController extends Controller
             })
         ]);
         
+        // CRITICAL: Log the exact data structure being processed
+        \Log::info("Raw match data for player {$playerName}:", [
+            'playerName' => $playerName,
+            'activeTeamId' => $activeTeamId,
+            'teamName' => $teamName,
+            'matchTeamsData' => $matchTeams->toArray()
+        ]);
+        
         $heroStats = [];
 
         foreach ($matchTeams as $team) {
             $match = $team->match;
             if (!$match) continue; // Skip if no match
             
+            // Double-check that this match belongs to the current team
+            if ($match->team_id != $activeTeamId) {
+                \Log::warning("Match {$match->id} does not belong to current team {$activeTeamId}, skipping");
+                continue;
+            }
+            
             $isWin = $team->team === $match->winner;
             // Combine picks1 and picks2
             $picks = array_merge($team->picks1 ?? [], $team->picks2 ?? []);
             
+            // Debug logging for picks
+            \Log::info("Processing picks for player {$playerName} in team {$team->team}", [
+                'match_id' => $match->id,
+                'is_win' => $isWin,
+                'picks_count' => count($picks),
+                'picks_sample' => array_slice($picks, 0, 3) // Log first 3 picks
+            ]);
+            
+            // CRITICAL: Log all picks to see the exact data structure
+            \Log::info("All picks for team {$team->team}:", [
+                'picks1' => $team->picks1,
+                'picks2' => $team->picks2,
+                'merged_picks' => $picks
+            ]);
+            
             foreach ($picks as $pick) {
-                // Check if this pick matches the player's role/lane
-                if (
-                    is_array($pick) &&
-                    isset($pick['hero']) &&
-                    isset($pick['lane']) &&
-                    (!$role || strtolower($pick['lane']) === strtolower($role))
-                ) {
-                    $hero = $pick['hero'];
+                // Check if this pick matches the specific player, not just the role
+                if (is_array($pick) && isset($pick['hero']) && isset($pick['lane'])) {
+                    // First check if this pick has a specific player assigned
+                    if (isset($pick['player'])) {
+                        // Check if player is an object with name property
+                        if (is_object($pick['player']) && isset($pick['player']['name'])) {
+                            if (strtolower($pick['player']['name']) === strtolower($playerName)) {
+                                $hero = $pick['hero'];
+                            } else {
+                                continue; // Skip if this pick doesn't belong to the requested player
+                            }
+                        } 
+                        // Check if player is a string
+                        elseif (is_string($pick['player'])) {
+                            if (strtolower($pick['player']) === strtolower($playerName)) {
+                                $hero = $pick['hero'];
+                            } else {
+                                continue; // Skip if this pick doesn't belong to the requested player
+                            }
+                        } else {
+                            continue; // Skip if player format is unrecognized
+                        }
+                    } 
+                    // CRITICAL: No fallback to role-based matching - this prevents data mixing
+                    // Only count picks that have specific player assignments
+                    else {
+                        // Log this case for debugging
+                        \Log::warning("Pick missing player assignment - skipping to prevent data mixing", [
+                            'pick' => $pick,
+                            'playerName' => $playerName,
+                            'match_id' => $match->id
+                        ]);
+                        continue; // Skip if no specific player assigned
+                    }
                     
                     if (!isset($heroStats[$hero])) {
                         $heroStats[$hero] = ['win' => 0, 'lose' => 0, 'total' => 0];
@@ -248,23 +451,55 @@ class PlayerController extends Controller
         }
         // Sort by total desc
         usort($result, function($a, $b) { return $b['total'] <=> $a['total']; });
+        
+        // Log final results for debugging
+        \Log::info("Final hero stats for player {$playerName} in heroStatsByTeam", [
+            'playerName' => $playerName,
+            'totalHeroes' => count($result),
+            'heroes' => $result,
+            'activeTeamId' => $activeTeamId
+        ]);
+        
         return response()->json($result);
     }
 
     public function heroH2HStatsByTeam(Request $request, $playerName)
     {
+        // Get the active team ID from session or request header
+        $activeTeamId = session('active_team_id');
+        
+        // If no session, try to get from request header (for frontend compatibility)
+        if (!$activeTeamId) {
+            $activeTeamId = $request->header('X-Active-Team-ID');
+        }
+        
         $teamName = $request->query('teamName');
         $role = $request->query('role'); // Get role parameter for unique player identification
         
         // Debug logging
         \Log::info("Player H2H stats request", [
             'playerName' => $playerName,
+            'activeTeamId' => $activeTeamId,
             'teamName' => $teamName,
             'role' => $role
         ]);
         
-        // Filter by team name if provided
+        // CRITICAL FIX: Always filter by the current team's ID to prevent data mixing
+        // Filter by team name if provided, but always ensure matches belong to current team
         $query = \App\Models\MatchTeam::with('match');
+        
+        // Always filter by the current team ID to ensure data isolation
+        if ($activeTeamId) {
+            $query->whereHas('match', function($q) use ($activeTeamId) {
+                $q->where('team_id', $activeTeamId);
+            });
+        } else {
+            // If no active team ID, return empty results to prevent data leakage
+            \Log::warning("No active team ID found for H2H stats, returning empty results to prevent data mixing");
+            return response()->json([]);
+        }
+        
+        // Additional filter by team name if provided (for extra safety)
         if ($teamName) {
             $query->where('team', $teamName);
         }
@@ -282,6 +517,12 @@ class PlayerController extends Controller
             $match = $team->match;
             if (!$match) continue;
             
+            // Double-check that this match belongs to the current team
+            if ($match->team_id != $activeTeamId) {
+                \Log::warning("Match {$match->id} does not belong to current team {$activeTeamId} for H2H stats, skipping");
+                continue;
+            }
+            
             $isWin = $team->team === $match->winner;
             
             // Find the enemy team in the same match
@@ -295,12 +536,37 @@ class PlayerController extends Controller
             $enemyPicks = array_merge($enemyTeam->picks1 ?? [], $enemyTeam->picks2 ?? []);
             
             foreach ($picks as $pick) {
-                if (
-                    is_array($pick) &&
-                    isset($pick['hero']) &&
-                    isset($pick['lane']) &&
-                    (!$role || strtolower($pick['lane']) === strtolower($role))
-                ) {
+                // Check if this pick matches the specific player, not just the role
+                if (is_array($pick) && isset($pick['hero']) && isset($pick['lane'])) {
+                    // First check if this pick has a specific player assigned
+                    if (isset($pick['player'])) {
+                        // Check if player is an object with name property
+                        if (is_object($pick['player']) && isset($pick['player']['name'])) {
+                            if (strtolower($pick['player']['name']) !== strtolower($playerName)) {
+                                continue; // Skip if this pick doesn't belong to the requested player
+                            }
+                        } 
+                        // Check if player is a string
+                        elseif (is_string($pick['player'])) {
+                            if (strtolower($pick['player']) !== strtolower($playerName)) {
+                                continue; // Skip if this pick doesn't belong to the requested player
+                            }
+                        } else {
+                            continue; // Skip if player format is unrecognized
+                        }
+                    } 
+                    // CRITICAL: No fallback to role-based matching - this prevents data mixing
+                    // Only count picks that have specific player assignments
+                    else {
+                        // Log this case for debugging
+                        \Log::warning("H2H Pick missing player assignment - skipping to prevent data mixing", [
+                            'pick' => $pick,
+                            'playerName' => $playerName,
+                            'match_id' => $match->id
+                        ]);
+                        continue; // Skip if no specific player assigned
+                    }
+                    
                     $playerHero = $pick['hero'];
                     $lane = $pick['lane'];
                     
@@ -345,6 +611,306 @@ class PlayerController extends Controller
         }
         // Sort by total desc
         usort($result, function($a, $b) { return $b['total'] <=> $a['total']; });
+        
+        // Log final results for debugging
+        \Log::info("Final H2H stats for player {$playerName} in heroH2HStatsByTeam", [
+            'playerName' => $playerName,
+            'totalMatchups' => count($result),
+            'matchups' => $result,
+            'activeTeamId' => $activeTeamId
+        ]);
+        
         return response()->json($result);
+    }
+
+    public function debug(Request $request)
+    {
+        return response()->json([
+            'session_id' => session()->getId(),
+            'session_started' => session()->isStarted(),
+            'active_team_id' => session('active_team_id'),
+            'header_team_id' => $request->header('X-Active-Team-ID'),
+            'body_team_id' => $request->input('team_id'),
+            'all_session_data' => session()->all(),
+            'request_headers' => $request->headers->all(),
+            'request_data' => $request->all()
+        ]);
+    }
+    
+    /**
+     * Debug endpoint to inspect match data for a specific player
+     */
+    public function debugPlayerMatches(Request $request, $playerName)
+    {
+        $activeTeamId = session('active_team_id');
+        if (!$activeTeamId) {
+            $activeTeamId = $request->header('X-Active-Team-ID');
+        }
+        
+        if (!$activeTeamId) {
+            return response()->json(['error' => 'No active team found'], 404);
+        }
+        
+        // Get all matches for the current team
+        $matches = \App\Models\GameMatch::where('team_id', $activeTeamId)->get();
+        
+        $debugData = [];
+        foreach ($matches as $match) {
+            $matchData = [
+                'match_id' => $match->id,
+                'match_date' => $match->match_date,
+                'winner' => $match->winner,
+                'teams' => []
+            ];
+            
+            foreach ($match->teams as $team) {
+                $teamData = [
+                    'team' => $team->team,
+                    'team_color' => $team->team_color,
+                    'picks1' => $team->picks1,
+                    'picks2' => $team->picks2
+                ];
+                
+                // Check if any picks contain the player
+                $playerPicks = [];
+                $allPicks = array_merge($team->picks1 ?? [], $team->picks2 ?? []);
+                
+                foreach ($allPicks as $pick) {
+                    if (is_array($pick) && isset($pick['player'])) {
+                        if (is_object($pick['player']) && isset($pick['player']['name'])) {
+                            if (strtolower($pick['player']['name']) === strtolower($playerName)) {
+                                $playerPicks[] = $pick;
+                            }
+                        } elseif (is_string($pick['player']) && strtolower($pick['player']) === strtolower($playerName)) {
+                            $playerPicks[] = $pick;
+                        }
+                    }
+                }
+                
+                $teamData['player_picks'] = $playerPicks;
+                $matchData['teams'][] = $teamData;
+            }
+            
+            $debugData[] = $matchData;
+        }
+        
+        return response()->json([
+            'playerName' => $playerName,
+            'activeTeamId' => $activeTeamId,
+            'totalMatches' => count($matches),
+            'matches' => $debugData
+        ]);
+    }
+    
+    /**
+     * Test endpoint to simulate the exact logic used in heroStatsByTeam
+     */
+    public function testPlayerStatsLogic(Request $request, $playerName)
+    {
+        $activeTeamId = session('active_team_id');
+        if (!$activeTeamId) {
+            $activeTeamId = $request->header('X-Active-Team-ID');
+        }
+        
+        if (!$activeTeamId) {
+            return response()->json(['error' => 'No active team found'], 404);
+        }
+        
+        $teamName = $request->query('teamName');
+        
+        // Use the exact same logic as heroStatsByTeam
+        $query = \App\Models\MatchTeam::with('match');
+        
+        if ($activeTeamId) {
+            $query->whereHas('match', function($q) use ($activeTeamId) {
+                $q->where('team_id', $activeTeamId);
+            });
+        }
+        
+        if ($teamName) {
+            $query->where('team', $teamName);
+        }
+        
+        $matchTeams = $query->get();
+        
+        $testResults = [];
+        $heroStats = [];
+        
+        foreach ($matchTeams as $team) {
+            $match = $team->match;
+            if (!$match) continue;
+            
+            if ($match->team_id != $activeTeamId) {
+                continue;
+            }
+            
+            $isWin = $team->team === $match->winner;
+            $picks = array_merge($team->picks1 ?? [], $team->picks2 ?? []);
+            
+            $teamResults = [
+                'team' => $team->team,
+                'match_id' => $match->id,
+                'is_win' => $isWin,
+                'picks_processed' => 0,
+                'picks_skipped' => 0,
+                'picks_details' => []
+            ];
+            
+            foreach ($picks as $pick) {
+                $pickDetail = [
+                    'raw_pick' => $pick,
+                    'pick_type' => gettype($pick),
+                    'has_hero' => isset($pick['hero']),
+                    'has_lane' => isset($pick['lane']),
+                    'has_player' => isset($pick['player']),
+                    'player_type' => isset($pick['player']) ? gettype($pick['player']) : 'none',
+                    'player_name' => null,
+                    'processed' => false,
+                    'reason' => ''
+                ];
+                
+                if (is_array($pick) && isset($pick['hero']) && isset($pick['lane'])) {
+                    if (isset($pick['player'])) {
+                        if (is_object($pick['player']) && isset($pick['player']['name'])) {
+                            if (strtolower($pick['player']['name']) === strtolower($playerName)) {
+                                $hero = $pick['hero'];
+                                $pickDetail['player_name'] = $pick['player']['name'];
+                                $pickDetail['processed'] = true;
+                                $pickDetail['reason'] = 'Player object match';
+                                
+                                if (!isset($heroStats[$hero])) {
+                                    $heroStats[$hero] = ['win' => 0, 'lose' => 0, 'total' => 0];
+                                }
+                                $heroStats[$hero]['total']++;
+                                if ($isWin) {
+                                    $heroStats[$hero]['win']++;
+                                } else {
+                                    $heroStats[$hero]['lose']++;
+                                }
+                                
+                                $teamResults['picks_processed']++;
+                            } else {
+                                $pickDetail['player_name'] = $pick['player']['name'];
+                                $pickDetail['reason'] = 'Player name mismatch';
+                                $teamResults['picks_skipped']++;
+                            }
+                        } elseif (is_string($pick['player'])) {
+                            if (strtolower($pick['player']) === strtolower($playerName)) {
+                                $hero = $pick['hero'];
+                                $pickDetail['player_name'] = $pick['player'];
+                                $pickDetail['processed'] = true;
+                                $pickDetail['reason'] = 'Player string match';
+                                
+                                if (!isset($heroStats[$hero])) {
+                                    $heroStats[$hero] = ['win' => 0, 'lose' => 0, 'total' => 0];
+                                }
+                                $heroStats[$hero]['total']++;
+                                if ($isWin) {
+                                    $heroStats[$hero]['win']++;
+                                } else {
+                                    $heroStats[$hero]['lose']++;
+                                }
+                                
+                                $teamResults['picks_processed']++;
+                            } else {
+                                $pickDetail['player_name'] = $pick['player'];
+                                $pickDetail['reason'] = 'Player string mismatch';
+                                $teamResults['picks_skipped']++;
+                            }
+                        } else {
+                            $pickDetail['reason'] = 'Unrecognized player format';
+                            $teamResults['picks_skipped']++;
+                        }
+                    } else {
+                        $pickDetail['reason'] = 'Missing player assignment';
+                        $teamResults['picks_skipped']++;
+                    }
+                } else {
+                    $pickDetail['reason'] = 'Invalid pick format';
+                    $teamResults['picks_skipped']++;
+                }
+                
+                $teamResults['picks_details'][] = $pickDetail;
+            }
+            
+            $testResults[] = $teamResults;
+        }
+        
+        return response()->json([
+            'playerName' => $playerName,
+            'activeTeamId' => $activeTeamId,
+            'teamName' => $teamName,
+            'testResults' => $testResults,
+            'finalHeroStats' => $heroStats,
+            'totalPicksProcessed' => array_sum(array_column($testResults, 'picks_processed')),
+            'totalPicksSkipped' => array_sum(array_column($testResults, 'picks_skipped'))
+        ]);
+    }
+
+    /**
+     * Store a newly created player
+     */
+    public function store(Request $request)
+    {
+        \Log::info('Creating player with data:', $request->all());
+        
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'role' => 'required|string|max:255',
+            'team_id' => 'required|integer|exists:teams,id'
+        ]);
+
+        try {
+            $player = Player::create([
+                'name' => $request->name,
+                'role' => $request->role,
+                'team_id' => $request->team_id
+            ]);
+
+            \Log::info('Player created successfully:', $player->toArray());
+            return response()->json($player, 201);
+        } catch (\Exception $e) {
+            \Log::error('Error creating player: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            return response()->json(['error' => 'Failed to create player: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Update the specified player
+     */
+    public function update(Request $request, $id)
+    {
+        $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'role' => 'sometimes|string|max:255',
+            'team_id' => 'sometimes|integer|exists:teams,id'
+        ]);
+
+        try {
+            $player = Player::findOrFail($id);
+            $player->update($request->only(['name', 'role', 'team_id']));
+            
+            return response()->json($player);
+        } catch (\Exception $e) {
+            \Log::error('Error updating player: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to update player'], 500);
+        }
+    }
+
+    /**
+     * Remove the specified player
+     */
+    public function destroy($id)
+    {
+        try {
+            $player = Player::findOrFail($id);
+            $player->delete();
+            
+            return response()->json(['message' => 'Player deleted successfully']);
+        } catch (\Exception $e) {
+            \Log::error('Error deleting player: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to delete player'], 500);
+        }
     }
 }

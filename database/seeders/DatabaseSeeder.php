@@ -12,10 +12,11 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Seed admin user and heroes
+        // Seed admin user, heroes, and default team
         $this->call([
             AdminUserSeeder::class,
             HeroSeeder::class,
+            TeamSeeder::class,
         ]);
     }
 }

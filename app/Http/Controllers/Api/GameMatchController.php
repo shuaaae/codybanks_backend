@@ -16,18 +16,32 @@ class GameMatchController extends Controller
     public function index(Request $request)
     {
         try {
+            // Get team_id from query parameter first
             $teamId = $request->query('team_id');
             $teamId = is_numeric($teamId) ? (int) $teamId : null;
+            
+            // If no team_id in query, get from session or header
+            if (!$teamId) {
+                $teamId = session('active_team_id');
+            }
+            
+            if (!$teamId) {
+                $teamId = $request->header('X-Active-Team-ID');
+            }
+            
+
+
+            // CRITICAL FIX: Always filter by team ID to prevent data mixing
+            if (!$teamId) {
+                return response()->json(['error' => 'No active team found'], 404);
+            }
 
             $q = \App\Models\GameMatch::query()
                 ->select(['id','team_id','match_date','winner','turtle_taken','lord_taken','notes','playstyle'])
                 ->with([
                     'teams:id,match_id,team,team_color,banning_phase1,picks1,banning_phase2,picks2',
-                ]);
-
-            if ($teamId !== null) {
-                $q->where('team_id', $teamId);
-            }
+                ])
+                ->where('team_id', $teamId); // Always filter by team ID
 
             $matches = $q->orderBy('match_date', 'asc')->get();
 
@@ -93,6 +107,17 @@ class GameMatchController extends Controller
             // Defensive: Only create teams if present and is array
             if (isset($validated['teams']) && is_array($validated['teams'])) {
                 foreach ($validated['teams'] as $teamData) {
+                    // Log the team data to see what's being stored
+                    \Log::info('Creating match team', [
+                        'match_id' => $match->id,
+                        'team_name' => $teamData['team'],
+                        'team_color' => $teamData['team_color'],
+                        'picks1_count' => count($teamData['picks1'] ?? []),
+                        'picks2_count' => count($teamData['picks2'] ?? []),
+                        'picks1_sample' => array_slice($teamData['picks1'] ?? [], 0, 2), // Log first 2 picks
+                        'picks2_sample' => array_slice($teamData['picks2'] ?? [], 0, 2), // Log first 2 picks
+                    ]);
+                    
                     $teamData['match_id'] = $match->id;
                     MatchTeam::create($teamData);
                 }
@@ -132,11 +157,30 @@ class GameMatchController extends Controller
     public function update(Request $request, string $id)
     {
         try {
-            $match = GameMatch::findOrFail($id);
+            // Get the active team ID from session or request header
+            $activeTeamId = session('active_team_id');
+            
+            if (!$activeTeamId) {
+                $activeTeamId = $request->header('X-Active-Team-ID');
+            }
+
+            // CRITICAL FIX: Ensure the match belongs to the current team
+            if (!$activeTeamId) {
+                return response()->json(['error' => 'No active team found'], 404);
+            }
+
+            $match = GameMatch::where('id', $id)
+                ->where('team_id', $activeTeamId)
+                ->first();
+
+            if (!$match) {
+                return response()->json(['error' => 'Match not found or access denied'], 404);
+            }
             
             // Log the incoming request for debugging
             \Log::info('Updating match', [
                 'match_id' => $id,
+                'active_team_id' => $activeTeamId,
                 'request_data' => $request->all(),
                 'current_match_data' => $match->toArray(),
                 'team_id_header' => $request->header('X-Active-Team-ID'),
@@ -161,6 +205,22 @@ class GameMatchController extends Controller
         ]);
 
         return DB::transaction(function () use ($match, $validated) {
+            // Log the validated data to see what's being updated
+            \Log::info('Updating match with validated data', [
+                'match_id' => $match->id,
+                'teams_count' => count($validated['teams']),
+                'teams_sample' => array_map(function($team) {
+                    return [
+                        'team_name' => $team['team'],
+                        'team_color' => $team['team_color'],
+                        'picks1_count' => count($team['picks1'] ?? []),
+                        'picks2_count' => count($team['picks2'] ?? []),
+                        'picks1_sample' => array_slice($team['picks1'] ?? [], 0, 2),
+                        'picks2_sample' => array_slice($team['picks2'] ?? [], 0, 2),
+                    ];
+                }, $validated['teams'])
+            ]);
+            
             // Update parent row
             $match->update([
                 'match_date'   => $validated['match_date'],
@@ -174,6 +234,17 @@ class GameMatchController extends Controller
             // Recreate children
             $match->teams()->delete();
             foreach ($validated['teams'] as $t) {
+                // Log each team being created
+                \Log::info('Creating updated match team', [
+                    'match_id' => $match->id,
+                    'team_name' => $t['team'],
+                    'team_color' => $t['team_color'],
+                    'picks1_count' => count($t['picks1'] ?? []),
+                    'picks2_count' => count($t['picks2'] ?? []),
+                    'picks1_sample' => array_slice($t['picks1'] ?? [], 0, 2),
+                    'picks2_sample' => array_slice($t['picks2'] ?? [], 0, 2),
+                ]);
+                
                 $t['match_id'] = $match->id;
                 MatchTeam::create($t);
             }
@@ -205,8 +276,25 @@ class GameMatchController extends Controller
     public function destroy(string $id)
     {
         try {
-            // Find the match
-            $match = GameMatch::findOrFail($id);
+            // Get the active team ID from session or request header
+            $activeTeamId = session('active_team_id');
+            
+            if (!$activeTeamId) {
+                $activeTeamId = request()->header('X-Active-Team-ID');
+            }
+
+            // CRITICAL FIX: Ensure the match belongs to the current team
+            if (!$activeTeamId) {
+                return response()->json(['error' => 'No active team found'], 404);
+            }
+
+            $match = GameMatch::where('id', $id)
+                ->where('team_id', $activeTeamId)
+                ->first();
+
+            if (!$match) {
+                return response()->json(['error' => 'Match not found or access denied'], 404);
+            }
             
             // Delete related match_teams first to satisfy foreign key constraints
             $match->teams()->delete();

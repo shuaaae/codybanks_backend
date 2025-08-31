@@ -34,4 +34,41 @@ class GameMatch extends Model
     {
         return $this->belongsTo(Team::class);
     }
+
+    // Player assignments for this match
+    public function playerAssignments()
+    {
+        return $this->hasMany(MatchPlayerAssignment::class, 'match_id');
+    }
+
+    // Get players by role for this match
+    public function getPlayersByRole($role)
+    {
+        return $this->playerAssignments()
+            ->where('role', $role)
+            ->with('player')
+            ->get()
+            ->pluck('player');
+    }
+
+    // Get starting lineup for this match
+    public function getStartingLineup()
+    {
+        return $this->playerAssignments()
+            ->where('is_starting_lineup', true)
+            ->with('player')
+            ->get()
+            ->pluck('player');
+    }
+
+    // Get substitutes for this match
+    public function getSubstitutes()
+    {
+        return $this->playerAssignments()
+            ->where('is_starting_lineup', false)
+            ->with('player')
+            ->orderBy('substitute_order')
+            ->get()
+            ->pluck('player');
+    }
 }

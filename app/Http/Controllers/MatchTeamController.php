@@ -10,11 +10,28 @@ class MatchTeamController extends Controller
     /**
      * Display a listing of the resource.
      */
- // In your MatchTeamController
-public function index()
-{
-    return MatchTeam::with('match')->get();
-}
+    public function index(Request $request)
+    {
+        // Get the active team ID from session or request header
+        $activeTeamId = session('active_team_id');
+        
+        // If no session, try to get from request header (for frontend compatibility)
+        if (!$activeTeamId) {
+            $activeTeamId = $request->header('X-Active-Team-ID');
+        }
+
+        if (!$activeTeamId) {
+            return response()->json(['error' => 'No active team found'], 404);
+        }
+        
+        // CRITICAL FIX: Always filter by the current team's ID to prevent data mixing
+        // Return only match teams for matches that belong to the current team
+        return MatchTeam::with('match')
+            ->whereHas('match', function($query) use ($activeTeamId) {
+                $query->where('team_id', $activeTeamId);
+            })
+            ->get();
+    }
     /**
      * Store a newly created resource in storage.
      */
