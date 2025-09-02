@@ -35,13 +35,15 @@ Route::get('/hero-image/{role}/{image}', function ($role, $image) {
         $imageInfo = @getimagesize($imagePath);
         $mimeType = $imageInfo['mime'] ?? 'image/webp';
         
-        // Return the image with proper headers
+        // Return the image with optimized headers
         return response()->file($imagePath, [
             'Content-Type' => $mimeType,
             'Access-Control-Allow-Origin' => '*',
             'Access-Control-Allow-Methods' => 'GET',
             'Access-Control-Allow-Headers' => 'Content-Type',
-            'Cache-Control' => 'public, max-age=3600' // Cache for 1 hour
+            'Cache-Control' => 'public, max-age=86400, immutable', // Cache for 24 hours
+            'ETag' => md5_file($imagePath), // Enable ETag for better caching
+            'Last-Modified' => gmdate('D, d M Y H:i:s', filemtime($imagePath)) . ' GMT'
         ]);
     } catch (\Exception $e) {
         // Log the error for debugging but don't expose it to client
