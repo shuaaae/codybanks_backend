@@ -19,7 +19,9 @@ Route::get('/test', function () {
 // Hero image proxy route to bypass CORS issues
 Route::get('/hero-image/{role}/{image}', function ($role, $image) {
     try {
-        $imageUrl = "https://api.coachdatastatistics.site/heroes/{$role}/{$image}";
+        // URL decode the image filename to handle spaces and special characters
+        $decodedImage = urldecode($image);
+        $imageUrl = "https://api.coachdatastatistics.site/heroes/{$role}/{$decodedImage}";
         
         // Create a context with timeout to prevent hanging requests
         $context = stream_context_create([
