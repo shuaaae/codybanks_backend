@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('matches', function (Blueprint $table) {
-            $table->enum('match_type', ['scrim', 'tournament'])->default('scrim')->after('team_id');
+             $table->enum('match_type', ['scrim', 'tournament'])->default('scrim')->after('team_id');
         });
     }
 

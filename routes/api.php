@@ -21,15 +21,28 @@ Route::get('/hero-image/{role}/{image}', function ($role, $image) {
     try {
         $imageUrl = "https://api.coachdatastatistics.site/heroes/{$role}/{$image}";
         
-        // Get the image content
-        $imageContent = file_get_contents($imageUrl);
+        // Create a context with timeout to prevent hanging requests
+        $context = stream_context_create([
+            'http' => [
+                'timeout' => 10, // 10 second timeout
+                'method' => 'GET',
+                'header' => [
+                    'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                ]
+            ]
+        ]);
+        
+        // Get the image content with timeout
+        $imageContent = @file_get_contents($imageUrl, false, $context);
         
         if ($imageContent === false) {
+            // Log the error for debugging but don't expose it to client
+            \Log::warning("Failed to fetch hero image: {$imageUrl}");
             return response()->json(['error' => 'Image not found'], 404);
         }
         
         // Get the image info
-        $imageInfo = getimagesize($imageUrl);
+        $imageInfo = @getimagesize($imageUrl);
         $mimeType = $imageInfo['mime'] ?? 'image/jpeg';
         
         // Return the image with proper headers
@@ -40,7 +53,13 @@ Route::get('/hero-image/{role}/{image}', function ($role, $image) {
             ->header('Access-Control-Allow-Headers', 'Content-Type')
             ->header('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
     } catch (\Exception $e) {
-        return response()->json(['error' => 'Failed to load image: ' . $e->getMessage()], 500);
+        // Log the error for debugging but don't expose it to client
+        \Log::error("Hero image proxy error: " . $e->getMessage(), [
+            'role' => $role,
+            'image' => $image,
+            'url' => $imageUrl ?? 'unknown'
+        ]);
+        return response()->json(['error' => 'Failed to load image'], 500);
     }
 });
 
