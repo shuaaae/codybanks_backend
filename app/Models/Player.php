@@ -48,6 +48,30 @@ class Player extends Model
         return $this->hasMany(MatchPlayerAssignment::class);
     }
 
+    // Player stats for this player - Note: PlayerStat uses player_name string, not foreign key
+    // public function playerStats(): HasMany
+    // {
+    //     return $this->hasMany(PlayerStat::class, 'player_name', 'name');
+    // }
+
+    // Lane assignments for this player
+    public function laneAssignments(): HasMany
+    {
+        return $this->hasMany(MatchPlayerAssignment::class);
+    }
+
+    // Match players for this player
+    public function matchPlayers(): HasMany
+    {
+        return $this->hasMany(MatchPlayerAssignment::class);
+    }
+
+    // Notes for this player (if any) - Note: Notes model doesn't have player relationship
+    // public function notes(): HasMany
+    // {
+    //     return $this->hasMany(Note::class, 'user_id', 'id');
+    // }
+
     // Scope to filter by team
     public function scopeForTeam($query, $teamId)
     {

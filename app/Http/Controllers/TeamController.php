@@ -17,7 +17,33 @@ class TeamController extends Controller
     public function index(): JsonResponse
     {
         $teams = Team::orderBy('created_at', 'desc')->get();
-        return response()->json($teams);
+        
+        // Add player count to each team
+        $teamsWithPlayerCount = $teams->map(function ($team) {
+            $playerCount = 0;
+            
+            // Try to get player count from players_data JSON field
+            if ($team->players_data && is_array($team->players_data)) {
+                $playerCount = count($team->players_data);
+            }
+            
+            // If no players_data or it's empty, try to get from Player model
+            if ($playerCount === 0) {
+                $playerCount = \App\Models\Player::where('team_id', $team->id)->count();
+            }
+            
+            return [
+                'id' => $team->id,
+                'name' => $team->name,
+                'logo_path' => $team->logo_path,
+                'created_at' => $team->created_at,
+                'updated_at' => $team->updated_at,
+                'players_data' => $team->players_data,
+                'player_count' => $playerCount
+            ];
+        });
+        
+        return response()->json($teamsWithPlayerCount);
     }
 
     /**
@@ -529,11 +555,36 @@ class TeamController extends Controller
             \Log::info("Updated team players_data with corrected roles");
         }
 
+        // Fetch the updated team data with player records
+        $updatedTeam = Team::with('players')->find($team->id);
+        
+        // Check if players relationship loaded correctly
+        if ($updatedTeam->players && method_exists($updatedTeam->players, 'map')) {
+            $playersWithIds = $updatedTeam->players->map(function($player) {
+                return [
+                    'id' => $player->id,
+                    'name' => $player->name,
+                    'role' => $player->role,
+                    'team_id' => $player->team_id
+                ];
+            })->toArray();
+        } else {
+            // Fallback: use the players_data JSON field if relationship failed
+            \Log::warning('Players relationship failed to load in ensurePlayerRecords, using players_data JSON field', [
+                'team_id' => $updatedTeam->id,
+                'players_type' => gettype($updatedTeam->players),
+                'players_data_type' => gettype($updatedTeam->players_data)
+            ]);
+            $playersWithIds = $updatedTeam->players_data ?? [];
+        }
+
         return response()->json([
             'message' => 'Player records ensured successfully',
             'ensured_count' => $ensuredCount,
             'errors' => $errors,
-            'total_processed' => count($playersData)
+            'total_processed' => count($playersData),
+            'updated_players' => $playersWithIds,
+            'team_id' => $team->id
         ]);
     }
 
@@ -719,7 +770,47 @@ class TeamController extends Controller
                     // Simplified: Just set the team as active without complex session management
                     session(['active_team_id' => $latestTeam->id]);
                     
-                    return response()->json($latestTeam);
+                    // Load the team with player relationships to get actual player IDs
+                    $latestTeam->load('players');
+                    
+                    // Create a response that includes both the team data and the actual player records
+                    $responseData = $latestTeam->toArray();
+                    
+                    // Check if players relationship loaded correctly
+                    if ($latestTeam->players && method_exists($latestTeam->players, 'map')) {
+                        $responseData['players_data'] = $latestTeam->players->map(function($player) {
+                            return [
+                                'id' => $player->id,
+                                'name' => $player->name,
+                                'role' => $player->role,
+                                'team_id' => $player->team_id,
+                                'photo' => $player->photo,
+                                'is_substitute' => $player->is_substitute,
+                                'player_code' => $player->player_code,
+                                'notes' => $player->notes,
+                                'primary_player_id' => $player->primary_player_id,
+                                'substitute_order' => $player->substitute_order,
+                                'created_at' => $player->created_at,
+                                'updated_at' => $player->updated_at
+                            ];
+                        })->toArray();
+                    } else {
+                        // Fallback: use the players_data JSON field if relationship failed
+                        \Log::warning('Players relationship failed to load, using players_data JSON field', [
+                            'team_id' => $latestTeam->id,
+                            'players_type' => gettype($latestTeam->players),
+                            'players_data_type' => gettype($latestTeam->players_data)
+                        ]);
+                        $responseData['players_data'] = $latestTeam->players_data ?? [];
+                    }
+                    
+                    \Log::info('Returning latest team as fallback with player records', [
+                        'team_id' => $latestTeam->id, 
+                        'team_name' => $latestTeam->name,
+                        'player_count' => count($responseData['players_data'])
+                    ]);
+                    
+                    return response()->json($responseData);
                 } else {
                     \Log::info('No teams found at all, returning 404');
                     return response()->json(['message' => 'No teams found'], 404);
@@ -735,8 +826,47 @@ class TeamController extends Controller
                 return response()->json(['message' => 'Active team not found'], 404);
             }
             
-            \Log::info('Returning active team', ['team_id' => $team->id, 'team_name' => $team->name]);
-            return response()->json($team);
+            // Load the team with player relationships to get actual player IDs
+            $team->load('players');
+            
+            // Create a response that includes both the team data and the actual player records
+            $responseData = $team->toArray();
+            
+            // Check if players relationship loaded correctly
+            if ($team->players && method_exists($team->players, 'map')) {
+                $responseData['players_data'] = $team->players->map(function($player) {
+                    return [
+                        'id' => $player->id,
+                        'name' => $player->name,
+                        'role' => $player->role,
+                        'team_id' => $player->team_id,
+                        'photo' => $player->photo,
+                        'is_substitute' => $player->is_substitute,
+                        'player_code' => $player->player_code,
+                        'notes' => $player->notes,
+                        'primary_player_id' => $player->primary_player_id,
+                        'substitute_order' => $player->substitute_order,
+                        'created_at' => $player->created_at,
+                        'updated_at' => $player->updated_at
+                    ];
+                })->toArray();
+            } else {
+                // Fallback: use the players_data JSON field if relationship failed
+                \Log::warning('Players relationship failed to load, using players_data JSON field', [
+                    'team_id' => $team->id,
+                    'players_type' => gettype($team->players),
+                    'players_data_type' => gettype($team->players_data)
+                ]);
+                $responseData['players_data'] = $team->players_data ?? [];
+            }
+            
+            \Log::info('Returning active team with player records', [
+                'team_id' => $team->id, 
+                'team_name' => $team->name,
+                'player_count' => count($responseData['players_data'])
+            ]);
+            
+            return response()->json($responseData);
             
         } catch (\Exception $e) {
             \Log::error('Error in getActiveTeam: ' . $e->getMessage());

@@ -11,9 +11,51 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\NotesController;
 
-// Test route
+// Test routes
 Route::get('/test', function () {
     return response()->json(['message' => 'API is working']);
+});
+
+Route::get('/test-delete/{id}', function ($id) {
+    return response()->json([
+        'message' => 'Delete test endpoint working',
+        'player_id' => $id,
+        'timestamp' => now()->toISOString()
+    ]);
+});
+
+// Debug route for player deletion testing
+Route::delete('/test-delete-player/{id}', function ($id) {
+    try {
+        $player = \App\Models\Player::find($id);
+        if (!$player) {
+            return response()->json(['error' => 'Player not found'], 404);
+        }
+        
+        // Check for related records
+        $relatedData = [
+            'match_assignments' => $player->matchAssignments()->count(),
+            'player_stats' => method_exists($player, 'playerStats') ? $player->playerStats()->count() : 0,
+            'notes' => method_exists($player, 'notes') ? $player->notes()->count() : 0,
+        ];
+        
+        // Try to delete
+        $deleted = $player->delete();
+        
+        return response()->json([
+            'message' => 'Test deletion completed',
+            'player_id' => $id,
+            'player_name' => $player->name,
+            'related_data_before_deletion' => $relatedData,
+            'deletion_successful' => $deleted,
+            'player_still_exists' => \App\Models\Player::find($id) ? true : false
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'error' => 'Test deletion failed: ' . $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ], 500);
+    }
 });
 
 // Authentication routes (no middleware - accessible to everyone)
@@ -22,9 +64,7 @@ Route::post('/auth/logout', [AuthController::class, 'logout']);
 Route::get('/auth/me', [AuthController::class, 'me']);
 
 Route::middleware('api')->group(function () {
-    Route::apiResource('matches', GameMatchController::class);
-    
-Route::apiResource('match-teams', MatchTeamController::class);
+    Route::apiResource('match-teams', MatchTeamController::class);
 
 // Match Player Assignment routes
 Route::post('/match-player-assignments/assign', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'assignPlayers']);
@@ -33,7 +73,6 @@ Route::get('/match-player-assignments/available-players', [App\Http\Controllers\
 Route::put('/match-player-assignments/update-substitute', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'updateSubstituteInfo']);
 Route::get('/match-player-assignments/player-stats', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getPlayerMatchStats']);
 Route::get('/heroes', [HeroController::class, 'index']);
-Route::post('/matches', [GameMatchController::class, 'store']);
 Route::post('/teams/history', [App\Http\Controllers\Api\HeroController::class, 'storeTeamHistory']);
 Route::get('/teams/history', [App\Http\Controllers\Api\HeroController::class, 'getTeamHistory']);
 Route::get('/players', [PlayerController::class, 'index']);
@@ -41,12 +80,23 @@ Route::post('/players', [PlayerController::class, 'store']);
 Route::put('/players/{id}', [PlayerController::class, 'update']);
 Route::delete('/players/{id}', [PlayerController::class, 'destroy']);
 Route::get('/players/{playerName}/hero-stats', [PlayerController::class, 'heroStats']);
+});
+
+// Player routes (moved outside api middleware for proper CRUD operations)
+Route::get('/players', [PlayerController::class, 'index']);
+Route::post('/players', [PlayerController::class, 'store']);
+Route::get('/players/{id}', [PlayerController::class, 'show']);
+Route::put('/players/{id}', [PlayerController::class, 'update']);
+Route::delete('/players/{id}', [PlayerController::class, 'destroy']);
+Route::get('/players/{playerName}/hero-stats', [PlayerController::class, 'heroStats']);
 Route::get('/players/{playerName}/hero-stats-by-team', [PlayerController::class, 'heroStatsByTeam']);
 Route::get('/players/{playerName}/hero-h2h-stats-by-team', [PlayerController::class, 'heroH2HStatsByTeam']);
-});
 
 // Team routes (with session support)
 Route::middleware('enable-sessions')->group(function () {
+    // Matches endpoints (moved here to access session data)
+    Route::apiResource('matches', GameMatchController::class);
+    
     Route::get('/teams', [TeamController::class, 'index']);
     Route::get('/teams/active', [TeamController::class, 'getActiveTeam']); // MUST come before /teams/{id}
     Route::get('/teams/{id}', [TeamController::class, 'show']);

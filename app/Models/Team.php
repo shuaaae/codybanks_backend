@@ -42,12 +42,13 @@ class Team extends Model
         return $this->hasOne(ActiveTeamSession::class);
     }
 
-    public function getPlayersAttribute()
+    // Custom accessor for players_data JSON field (renamed to avoid conflict with relationship)
+    public function getPlayersDataAttribute()
     {
         return $this->players_data ?? [];
     }
 
-    public function setPlayersAttribute($value)
+    public function setPlayersDataAttribute($value)
     {
         $this->players_data = $value;
     }

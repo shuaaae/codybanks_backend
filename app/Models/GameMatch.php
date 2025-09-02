@@ -17,11 +17,18 @@ class GameMatch extends Model
         'lord_taken',
         'notes',
         'playstyle',
-        'team_id'
+        'team_id',
+        'match_type'
     ];
 
     // Ensure timestamps are automatically updated
     public $timestamps = true;
+
+    // Scope for filtering by match type
+    public function scopeByMatchType($query, $matchType)
+    {
+        return $query->where('match_type', $matchType);
+    }
 
     // Relationship to teams
     public function teams()

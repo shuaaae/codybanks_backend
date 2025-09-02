@@ -20,6 +20,9 @@ class GameMatchController extends Controller
             $teamId = $request->query('team_id');
             $teamId = is_numeric($teamId) ? (int) $teamId : null;
             
+            // Get match_type from query parameter
+            $matchType = $request->query('match_type', 'scrim');
+            
             // If no team_id in query, get from session or header
             if (!$teamId) {
                 $teamId = session('active_team_id');
@@ -29,7 +32,14 @@ class GameMatchController extends Controller
                 $teamId = $request->header('X-Active-Team-ID');
             }
             
-
+            // If still no team_id, try to get the latest team as fallback
+            if (!$teamId) {
+                $latestTeam = \App\Models\Team::orderBy('created_at', 'desc')->first();
+                if ($latestTeam) {
+                    $teamId = $latestTeam->id;
+                    \Log::info('Using latest team as fallback', ['team_id' => $teamId]);
+                }
+            }
 
             // CRITICAL FIX: Always filter by team ID to prevent data mixing
             if (!$teamId) {
@@ -37,11 +47,12 @@ class GameMatchController extends Controller
             }
 
             $q = \App\Models\GameMatch::query()
-                ->select(['id','team_id','match_date','winner','turtle_taken','lord_taken','notes','playstyle'])
+                ->select(['id','team_id','match_date','winner','turtle_taken','lord_taken','notes','playstyle','match_type'])
                 ->with([
                     'teams:id,match_id,team,team_color,banning_phase1,picks1,banning_phase2,picks2',
                 ])
-                ->where('team_id', $teamId); // Always filter by team ID
+                ->where('team_id', $teamId) // Always filter by team ID
+                ->where('match_type', $matchType); // Filter by match type
 
             $matches = $q->orderBy('match_date', 'asc')->get();
 
@@ -84,6 +95,7 @@ class GameMatchController extends Controller
                 'notes' => 'nullable|string',
                 'playstyle' => 'nullable|string',
                 'team_id' => 'nullable|exists:teams,id', // Allow team_id in request
+                'match_type' => 'nullable|in:scrim,tournament',
                 'teams' => 'required|array|size:2',
                 'teams.*.team' => 'required|string',
                 'teams.*.team_color' => 'required|in:blue,red',
@@ -101,6 +113,7 @@ class GameMatchController extends Controller
                 'lord_taken' => $validated['lord_taken'] ?? null,
                 'notes' => $validated['notes'] ?? null,
                 'playstyle' => $validated['playstyle'] ?? null,
+                'match_type' => $validated['match_type'] ?? 'scrim',
                 'team_id' => $teamId, // Use the determined team_id
             ]);
 

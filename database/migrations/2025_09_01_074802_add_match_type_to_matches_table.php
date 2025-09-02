@@ -12,11 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('matches', function (Blueprint $table) {
-            $table->string('turtle_taken')->nullable();
-            $table->string('lord_taken')->nullable();
-            $table->text('notes')->nullable();
-            $table->string('playstyle')->nullable();
-            $table->enum('match_type', ['scrim', 'tournament'])->default('scrim');
+            $table->enum('match_type', ['scrim', 'tournament'])->default('scrim')->after('team_id');
         });
     }
 
@@ -26,7 +22,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('matches', function (Blueprint $table) {
-            $table->dropColumn(['turtle_taken', 'lord_taken', 'notes', 'playstyle', 'match_type']);
+            $table->dropColumn('match_type');
         });
     }
 };

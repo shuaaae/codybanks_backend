@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Player;
+use Illuminate\Support\Facades\DB;
 
 class PlayerController extends Controller
 {
@@ -146,6 +147,31 @@ class PlayerController extends Controller
         
         // Return only players for the active team
         return Player::where('team_id', $activeTeamId)->get();
+    }
+
+    /**
+     * Display the specified player
+     */
+    public function show($id)
+    {
+        try {
+            $player = Player::with('team')->findOrFail($id);
+            
+            // Check if player belongs to active team
+            $activeTeamId = session('active_team_id');
+            if (!$activeTeamId) {
+                $activeTeamId = request()->header('X-Active-Team-ID');
+            }
+            
+            if ($activeTeamId && $player->team_id != $activeTeamId) {
+                return response()->json(['error' => 'Player not found in active team'], 404);
+            }
+            
+            return response()->json($player);
+        } catch (\Exception $e) {
+            \Log::error('Error fetching player: ' . $e->getMessage());
+            return response()->json(['error' => 'Player not found'], 404);
+        }
     }
 
     public function heroStats($playerName)
@@ -306,13 +332,15 @@ class PlayerController extends Controller
         
         $teamName = $request->query('teamName');
         $role = $request->query('role'); // Get role parameter for unique player identification
+        $matchType = $request->query('match_type', 'scrim'); // Get match type parameter, default to scrim
         
         // Debug logging
         \Log::info("Player stats request", [
             'playerName' => $playerName,
             'activeTeamId' => $activeTeamId,
             'teamName' => $teamName,
-            'role' => $role
+            'role' => $role,
+            'matchType' => $matchType
         ]);
         
         // CRITICAL FIX: Always filter by the current team's ID to prevent data mixing
@@ -321,8 +349,9 @@ class PlayerController extends Controller
         
         // Always filter by the current team ID to ensure data isolation
         if ($activeTeamId) {
-            $query->whereHas('match', function($q) use ($activeTeamId) {
-                $q->where('team_id', $activeTeamId);
+            $query->whereHas('match', function($q) use ($activeTeamId, $matchType) {
+                $q->where('team_id', $activeTeamId)
+                  ->where('match_type', $matchType);
             });
         } else {
             // If no active team ID, return empty results to prevent data leakage
@@ -475,13 +504,15 @@ class PlayerController extends Controller
         
         $teamName = $request->query('teamName');
         $role = $request->query('role'); // Get role parameter for unique player identification
+        $matchType = $request->query('match_type', 'scrim'); // Get match type parameter, default to scrim
         
         // Debug logging
         \Log::info("Player H2H stats request", [
             'playerName' => $playerName,
             'activeTeamId' => $activeTeamId,
             'teamName' => $teamName,
-            'role' => $role
+            'role' => $role,
+            'matchType' => $matchType
         ]);
         
         // CRITICAL FIX: Always filter by the current team's ID to prevent data mixing
@@ -490,8 +521,9 @@ class PlayerController extends Controller
         
         // Always filter by the current team ID to ensure data isolation
         if ($activeTeamId) {
-            $query->whereHas('match', function($q) use ($activeTeamId) {
-                $q->where('team_id', $activeTeamId);
+            $query->whereHas('match', function($q) use ($activeTeamId, $matchType) {
+                $q->where('team_id', $activeTeamId)
+                  ->where('match_type', $matchType);
             });
         } else {
             // If no active team ID, return empty results to prevent data leakage
@@ -861,14 +893,40 @@ class PlayerController extends Controller
         ]);
 
         try {
+            // Check if player already exists in the team
+            $existingPlayer = Player::where('name', $request->name)
+                                  ->where('team_id', $request->team_id)
+                                  ->first();
+            
+            if ($existingPlayer) {
+                return response()->json([
+                    'error' => 'Player already exists in this team',
+                    'existing_player' => $existingPlayer
+                ], 409);
+            }
+
+            // Validate role format
+            $validRoles = ['exp', 'mid', 'jungler', 'gold', 'roam', 'substitute'];
+            if (!in_array(strtolower($request->role), $validRoles)) {
+                return response()->json([
+                    'error' => 'Invalid role. Must be one of: ' . implode(', ', $validRoles)
+                ], 422);
+            }
+
             $player = Player::create([
-                'name' => $request->name,
-                'role' => $request->role,
+                'name' => trim($request->name),
+                'role' => strtolower(trim($request->role)),
                 'team_id' => $request->team_id
             ]);
 
+            // Load the team relationship
+            $player->load('team');
+
             \Log::info('Player created successfully:', $player->toArray());
-            return response()->json($player, 201);
+            return response()->json([
+                'message' => 'Player created successfully',
+                'player' => $player
+            ], 201);
         } catch (\Exception $e) {
             \Log::error('Error creating player: ' . $e->getMessage());
             \Log::error('Stack trace: ' . $e->getTraceAsString());
@@ -889,28 +947,185 @@ class PlayerController extends Controller
 
         try {
             $player = Player::findOrFail($id);
-            $player->update($request->only(['name', 'role', 'team_id']));
             
-            return response()->json($player);
+            // Check if player belongs to active team
+            $activeTeamId = session('active_team_id');
+            if (!$activeTeamId) {
+                $activeTeamId = request()->header('X-Active-Team-ID');
+            }
+            
+            if ($activeTeamId && $player->team_id != $activeTeamId) {
+                return response()->json(['error' => 'Player not found in active team'], 404);
+            }
+
+            // Check for duplicate names if name is being updated
+            if ($request->has('name') && $request->name !== $player->name) {
+                $existingPlayer = Player::where('name', $request->name)
+                                      ->where('team_id', $player->team_id)
+                                      ->where('id', '!=', $id)
+                                      ->first();
+                
+                if ($existingPlayer) {
+                    return response()->json([
+                        'error' => 'Another player with this name already exists in the team'
+                    ], 409);
+                }
+            }
+
+            // Validate role format if role is being updated
+            if ($request->has('role')) {
+                $validRoles = ['exp', 'mid', 'jungler', 'gold', 'roam', 'substitute'];
+                if (!in_array(strtolower($request->role), $validRoles)) {
+                    return response()->json([
+                        'error' => 'Invalid role. Must be one of: ' . implode(', ', $validRoles)
+                    ], 422);
+                }
+            }
+
+            // Update only the provided fields
+            $updateData = [];
+            if ($request->has('name')) {
+                $updateData['name'] = trim($request->name);
+            }
+            if ($request->has('role')) {
+                $updateData['role'] = strtolower(trim($request->role));
+            }
+            if ($request->has('team_id')) {
+                $updateData['team_id'] = $request->team_id;
+            }
+
+            $player->update($updateData);
+            
+            // Load the team relationship
+            $player->load('team');
+            
+            return response()->json([
+                'message' => 'Player updated successfully',
+                'player' => $player
+            ]);
         } catch (\Exception $e) {
             \Log::error('Error updating player: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to update player'], 500);
+            return response()->json(['error' => 'Failed to update player: ' . $e->getMessage()], 500);
         }
     }
 
     /**
-     * Remove the specified player
+     * Remove the specified player (hard delete - permanently removes from database)
      */
     public function destroy($id)
     {
         try {
-            $player = Player::findOrFail($id);
-            $player->delete();
+            \Log::info("Attempting to hard delete player with ID: {$id}");
             
-            return response()->json(['message' => 'Player deleted successfully']);
+            $player = Player::findOrFail($id);
+            \Log::info("Found player: {$player->name} (ID: {$player->id}, Team ID: {$player->team_id})");
+            
+            // Check if player belongs to active team
+            $activeTeamId = session('active_team_id');
+            if (!$activeTeamId) {
+                $activeTeamId = request()->header('X-Active-Team-ID');
+            }
+            
+            \Log::info("Active team ID: {$activeTeamId}");
+            
+            if ($activeTeamId && $player->team_id != $activeTeamId) {
+                \Log::warning("Player team ID ({$player->team_id}) doesn't match active team ID ({$activeTeamId})");
+                return response()->json(['error' => 'Player not found in active team'], 404);
+            }
+
+            // Check if player has any match assignments
+            $hasMatchAssignments = $player->matchAssignments()->exists();
+            if ($hasMatchAssignments) {
+                $matchCount = $player->matchAssignments()->count();
+                \Log::warning("Cannot delete player {$player->name} - has {$matchCount} match assignments");
+                return response()->json([
+                    'error' => 'Cannot delete player with match history. Consider marking as inactive instead.',
+                    'match_count' => $matchCount
+                ], 422);
+            }
+
+            $playerName = $player->name;
+            $playerTeamId = $player->team_id;
+            
+            // Use database transaction for hard delete
+            \DB::beginTransaction();
+            
+            try {
+                // Option 1: Explicitly delete related records first
+                // Uncomment these lines if you want explicit control over related deletions
+                
+                // Delete player stats (PlayerStat table uses player_name string, not foreign key)
+                // We'll handle this manually if needed
+                \Log::info("Player stats are stored by player_name string, not foreign key - skipping explicit deletion");
+                
+                // Delete lane assignments (same as matchAssignments)
+                $assignmentsCount = $player->matchAssignments()->count();
+                if ($assignmentsCount > 0) {
+                    \Log::info("Deleting {$assignmentsCount} lane assignments for player {$playerName}");
+                    $player->matchAssignments()->delete();
+                }
+                
+                // Delete match players (same as matchAssignments)
+                $matchPlayersCount = $player->matchAssignments()->count();
+                if ($matchPlayersCount > 0) {
+                    \Log::info("Deleting {$matchPlayersCount} match player records for player {$playerName}");
+                    $player->matchAssignments()->delete();
+                }
+                
+                // Notes don't have a player relationship, so no need to delete them
+                \Log::info("Notes table doesn't have player relationship - skipping");
+                
+                // Perform the hard delete (regular delete since no SoftDeletes trait)
+                $deleted = $player->delete();
+                
+                if ($deleted) {
+                    \Log::info("Player '{$playerName}' (ID: {$id}) hard deleted successfully from team {$playerTeamId}");
+                    
+                    // Verify deletion by trying to find the player again
+                    $stillExists = Player::find($id);
+                    if ($stillExists) {
+                        \Log::error("Player {$playerName} still exists after hard deletion attempt!");
+                        \DB::rollBack();
+                        return response()->json(['error' => 'Player hard deletion failed - player still exists in database'], 500);
+                    }
+                    
+                    // Commit the transaction
+                    \DB::commit();
+                    
+                    return response()->json([
+                        'message' => 'Player Removed Successfully',
+                        'deleted_player' => [
+                            'id' => $id,
+                            'name' => $playerName,
+                            'team_id' => $playerTeamId
+                        ]
+                    ], 200);
+                } else {
+                    \Log::error("Player hard deletion returned false for player {$playerName}");
+                    \DB::rollBack();
+                    return response()->json(['error' => 'Player hard deletion failed'], 500);
+                }
+                
+            } catch (\Exception $e) {
+                // Rollback transaction on any error
+                \DB::rollBack();
+                \Log::error("Error during hard deletion transaction for player {$playerName}: " . $e->getMessage());
+                throw $e; // Re-throw to be caught by outer catch block
+            }
+            
         } catch (\Exception $e) {
-            \Log::error('Error deleting player: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to delete player'], 500);
+            \Log::error('Error hard deleting player: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            
+            // Check if it's a foreign key constraint error
+            if (str_contains($e->getMessage(), 'foreign key constraint')) {
+                return response()->json([
+                    'error' => 'Cannot delete player due to existing related records. Please remove related data first.',
+                    'details' => 'Foreign key constraint violation'
+                ], 422);
+            }
+            
+            return response()->json(['error' => 'Failed to hard delete player: ' . $e->getMessage()], 500);
         }
     }
 }
