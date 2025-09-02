@@ -16,6 +16,34 @@ Route::get('/test', function () {
     return response()->json(['message' => 'API is working']);
 });
 
+// Hero image proxy route to bypass CORS issues
+Route::get('/hero-image/{role}/{image}', function ($role, $image) {
+    try {
+        $imageUrl = "https://api.coachdatastatistics.site/heroes/{$role}/{$image}";
+        
+        // Get the image content
+        $imageContent = file_get_contents($imageUrl);
+        
+        if ($imageContent === false) {
+            return response()->json(['error' => 'Image not found'], 404);
+        }
+        
+        // Get the image info
+        $imageInfo = getimagesize($imageUrl);
+        $mimeType = $imageInfo['mime'] ?? 'image/jpeg';
+        
+        // Return the image with proper headers
+        return response($imageContent)
+            ->header('Content-Type', $mimeType)
+            ->header('Access-Control-Allow-Origin', '*')
+            ->header('Access-Control-Allow-Methods', 'GET')
+            ->header('Access-Control-Allow-Headers', 'Content-Type')
+            ->header('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+    } catch (\Exception $e) {
+        return response()->json(['error' => 'Failed to load image: ' . $e->getMessage()], 500);
+    }
+});
+
 Route::get('/test-delete/{id}', function ($id) {
     return response()->json([
         'message' => 'Delete test endpoint working',

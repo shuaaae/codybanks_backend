@@ -319,7 +319,7 @@ class HeroSeeder extends Seeder
                 array (
                   'name' => 'X.Borg',
                   'role' => 'Fighter',
-                  'image' => 'X.Borg.webp',
+                  'image' => 'X.borg.webp',
                 ),
                 52 =>
                 array (
