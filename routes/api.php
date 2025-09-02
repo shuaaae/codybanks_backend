@@ -16,50 +16,39 @@ Route::get('/test', function () {
     return response()->json(['message' => 'API is working']);
 });
 
-// Hero image proxy route to bypass CORS issues
+// Hero image route to serve images from local storage
 Route::get('/hero-image/{role}/{image}', function ($role, $image) {
     try {
         // URL decode the image filename to handle spaces and special characters
         $decodedImage = urldecode($image);
-        $imageUrl = "https://api.coachdatastatistics.site/heroes/{$role}/{$decodedImage}";
         
-        // Create a context with timeout to prevent hanging requests
-        $context = stream_context_create([
-            'http' => [
-                'timeout' => 10, // 10 second timeout
-                'method' => 'GET',
-                'header' => [
-                    'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                ]
-            ]
-        ]);
+        // Build the local file path
+        $imagePath = public_path("heroes/{$role}/{$decodedImage}");
         
-        // Get the image content with timeout
-        $imageContent = @file_get_contents($imageUrl, false, $context);
-        
-        if ($imageContent === false) {
-            // Log the error for debugging but don't expose it to client
-            \Log::warning("Failed to fetch hero image: {$imageUrl}");
+        // Check if the file exists
+        if (!file_exists($imagePath)) {
+            \Log::warning("Hero image not found: {$imagePath}");
             return response()->json(['error' => 'Image not found'], 404);
         }
         
         // Get the image info
-        $imageInfo = @getimagesize($imageUrl);
-        $mimeType = $imageInfo['mime'] ?? 'image/jpeg';
+        $imageInfo = @getimagesize($imagePath);
+        $mimeType = $imageInfo['mime'] ?? 'image/webp';
         
         // Return the image with proper headers
-        return response($imageContent)
-            ->header('Content-Type', $mimeType)
-            ->header('Access-Control-Allow-Origin', '*')
-            ->header('Access-Control-Allow-Methods', 'GET')
-            ->header('Access-Control-Allow-Headers', 'Content-Type')
-            ->header('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+        return response()->file($imagePath, [
+            'Content-Type' => $mimeType,
+            'Access-Control-Allow-Origin' => '*',
+            'Access-Control-Allow-Methods' => 'GET',
+            'Access-Control-Allow-Headers' => 'Content-Type',
+            'Cache-Control' => 'public, max-age=3600' // Cache for 1 hour
+        ]);
     } catch (\Exception $e) {
         // Log the error for debugging but don't expose it to client
-        \Log::error("Hero image proxy error: " . $e->getMessage(), [
+        \Log::error("Hero image error: " . $e->getMessage(), [
             'role' => $role,
             'image' => $image,
-            'url' => $imageUrl ?? 'unknown'
+            'path' => $imagePath ?? 'unknown'
         ]);
         return response()->json(['error' => 'Failed to load image'], 500);
     }
