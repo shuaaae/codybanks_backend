@@ -420,47 +420,53 @@ class PlayerController extends Controller
             foreach ($picks as $pick) {
                 // Check if this pick matches the specific player, not just the role
                 if (is_array($pick) && isset($pick['hero']) && isset($pick['lane'])) {
-                    // First check if this pick has a specific player assigned
+                    $hero = $pick['hero'];
+                    $pickPlayerName = null;
+                    
+                    // Extract player name from various possible data structures
                     if (isset($pick['player'])) {
-                        // Check if player is an object with name property
                         if (is_object($pick['player']) && isset($pick['player']['name'])) {
-                            if (strtolower($pick['player']['name']) === strtolower($playerName)) {
-                                $hero = $pick['hero'];
-                            } else {
-                                continue; // Skip if this pick doesn't belong to the requested player
-                            }
-                        } 
-                        // Check if player is a string
-                        elseif (is_string($pick['player'])) {
-                            if (strtolower($pick['player']) === strtolower($playerName)) {
-                                $hero = $pick['hero'];
-                            } else {
-                                continue; // Skip if this pick doesn't belong to the requested player
-                            }
-                        } else {
-                            continue; // Skip if player format is unrecognized
+                            $pickPlayerName = $pick['player']['name'];
+                        } elseif (is_string($pick['player'])) {
+                            $pickPlayerName = $pick['player'];
+                        } elseif (is_array($pick['player']) && isset($pick['player']['name'])) {
+                            $pickPlayerName = $pick['player']['name'];
                         }
-                    } 
-                    // CRITICAL: No fallback to role-based matching - this prevents data mixing
-                    // Only count picks that have specific player assignments
-                    else {
-                        // Log this case for debugging
-                        \Log::warning("Pick missing player assignment - skipping to prevent data mixing", [
-                            'pick' => $pick,
-                            'playerName' => $playerName,
-                            'match_id' => $match->id
-                        ]);
-                        continue; // Skip if no specific player assigned
                     }
                     
-                    if (!isset($heroStats[$hero])) {
-                        $heroStats[$hero] = ['win' => 0, 'lose' => 0, 'total' => 0];
+                    // Also check for direct player name in pick (fallback for older data)
+                    if (!$pickPlayerName && isset($pick['player_name'])) {
+                        $pickPlayerName = $pick['player_name'];
                     }
-                    $heroStats[$hero]['total']++;
-                    if ($isWin) {
-                        $heroStats[$hero]['win']++;
+                    
+                    // Check if this pick belongs to the requested player
+                    if ($pickPlayerName && strtolower($pickPlayerName) === strtolower($playerName)) {
+                        if (!isset($heroStats[$hero])) {
+                            $heroStats[$hero] = ['win' => 0, 'lose' => 0, 'total' => 0];
+                        }
+                        $heroStats[$hero]['total']++;
+                        if ($isWin) {
+                            $heroStats[$hero]['win']++;
+                        } else {
+                            $heroStats[$hero]['lose']++;
+                        }
+                        
+                        // Log successful match for debugging
+                        \Log::info("Player stats match found", [
+                            'playerName' => $playerName,
+                            'pickPlayerName' => $pickPlayerName,
+                            'hero' => $hero,
+                            'match_id' => $match->id,
+                            'is_win' => $isWin
+                        ]);
                     } else {
-                        $heroStats[$hero]['lose']++;
+                        // Log skipped pick for debugging
+                        \Log::debug("Pick skipped - player mismatch", [
+                            'requestedPlayer' => $playerName,
+                            'pickPlayerName' => $pickPlayerName,
+                            'pick' => $pick,
+                            'match_id' => $match->id
+                        ]);
                     }
                 }
             }
@@ -570,33 +576,34 @@ class PlayerController extends Controller
             foreach ($picks as $pick) {
                 // Check if this pick matches the specific player, not just the role
                 if (is_array($pick) && isset($pick['hero']) && isset($pick['lane'])) {
-                    // First check if this pick has a specific player assigned
+                    $pickPlayerName = null;
+                    
+                    // Extract player name from various possible data structures
                     if (isset($pick['player'])) {
-                        // Check if player is an object with name property
                         if (is_object($pick['player']) && isset($pick['player']['name'])) {
-                            if (strtolower($pick['player']['name']) !== strtolower($playerName)) {
-                                continue; // Skip if this pick doesn't belong to the requested player
-                            }
-                        } 
-                        // Check if player is a string
-                        elseif (is_string($pick['player'])) {
-                            if (strtolower($pick['player']) !== strtolower($playerName)) {
-                                continue; // Skip if this pick doesn't belong to the requested player
-                            }
-                        } else {
-                            continue; // Skip if player format is unrecognized
+                            $pickPlayerName = $pick['player']['name'];
+                        } elseif (is_string($pick['player'])) {
+                            $pickPlayerName = $pick['player'];
+                        } elseif (is_array($pick['player']) && isset($pick['player']['name'])) {
+                            $pickPlayerName = $pick['player']['name'];
                         }
-                    } 
-                    // CRITICAL: No fallback to role-based matching - this prevents data mixing
-                    // Only count picks that have specific player assignments
-                    else {
-                        // Log this case for debugging
-                        \Log::warning("H2H Pick missing player assignment - skipping to prevent data mixing", [
+                    }
+                    
+                    // Also check for direct player name in pick (fallback for older data)
+                    if (!$pickPlayerName && isset($pick['player_name'])) {
+                        $pickPlayerName = $pick['player_name'];
+                    }
+                    
+                    // Check if this pick belongs to the requested player
+                    if (!$pickPlayerName || strtolower($pickPlayerName) !== strtolower($playerName)) {
+                        // Log skipped pick for debugging
+                        \Log::debug("H2H Pick skipped - player mismatch", [
+                            'requestedPlayer' => $playerName,
+                            'pickPlayerName' => $pickPlayerName,
                             'pick' => $pick,
-                            'playerName' => $playerName,
                             'match_id' => $match->id
                         ]);
-                        continue; // Skip if no specific player assigned
+                        continue;
                     }
                     
                     $playerHero = $pick['hero'];
@@ -631,6 +638,16 @@ class PlayerController extends Controller
                     } else {
                         $h2hStats[$key]['lose']++;
                     }
+                    
+                    // Log successful H2H match for debugging
+                    \Log::info("H2H Player stats match found", [
+                        'playerName' => $playerName,
+                        'pickPlayerName' => $pickPlayerName,
+                        'playerHero' => $playerHero,
+                        'enemyHero' => $enemyHero,
+                        'match_id' => $match->id,
+                        'is_win' => $isWin
+                    ]);
                 }
             }
         }
