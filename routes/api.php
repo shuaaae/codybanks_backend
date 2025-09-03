@@ -102,6 +102,7 @@ Route::delete('/test-delete-player/{id}', function ($id) {
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::post('/auth/logout', [AuthController::class, 'logout']);
 Route::get('/auth/me', [AuthController::class, 'me']);
+Route::post('/auth/upload-photo', [AuthController::class, 'uploadPhoto']);
 
 Route::middleware('api')->group(function () {
     Route::apiResource('match-teams', MatchTeamController::class);

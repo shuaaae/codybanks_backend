@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use App\Models\User;
 
 class AuthController extends Controller
@@ -61,5 +62,38 @@ class AuthController extends Controller
         // For API, you'd typically get user from token
         // For now, return a placeholder
         return response()->json(['message' => 'User info endpoint']);
+    }
+
+    public function uploadPhoto(Request $request)
+    {
+        try {
+            $request->validate([
+                'photo' => 'required|image|max:2048', // 2MB max
+                'user_id' => 'required|integer|exists:users,id'
+            ]);
+
+            $user = User::findOrFail($request->user_id);
+
+            if ($request->hasFile('photo')) {
+                $file = $request->file('photo');
+                $filename = time() . '_' . $user->id . '.' . $file->getClientOriginalExtension();
+                
+                // Store the file in public/users directory
+                $file->move(public_path('users'), $filename);
+                
+                // Update user photo path
+                $user->photo = 'users/' . $filename;
+                $user->save();
+            }
+
+            return response()->json([
+                'message' => 'Photo uploaded successfully',
+                'photo' => url($user->photo),
+                'user' => $user
+            ], 200);
+        } catch (\Exception $e) {
+            \Log::error('Photo upload error: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to upload photo'], 500);
+        }
     }
 } 
