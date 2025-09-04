@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Team;
 use App\Models\Player;
-use App\Models\MultiDeviceSession;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -388,7 +387,8 @@ class TeamController extends Controller
                 
                 // Also clear from multi-device session if user_id and device_id provided
                 if ($userId && $deviceId) {
-                    MultiDeviceSession::where('user_id', $userId)
+                    DB::table('active_team_sessions')
+                        ->where('user_id', $userId)
                         ->where('device_id', $deviceId)
                         ->where('session_id', session()->getId())
                         ->delete();
@@ -411,16 +411,29 @@ class TeamController extends Controller
             
             // If user_id and device_id are provided, also store in multi-device session
             if ($userId && $deviceId) {
-                $deviceInfo = [
-                    'device_id' => $deviceId,
-                    'device_name' => $request->input('device_name', MultiDeviceSession::getDeviceNameFromUserAgent($request->userAgent())),
-                    'device_type' => $request->input('device_type', MultiDeviceSession::getDeviceTypeFromUserAgent($request->userAgent())),
-                    'browser_fingerprint' => $request->input('browser_fingerprint'),
-                    'ip_address' => $request->ip(),
-                    'user_agent' => $request->userAgent(),
-                ];
+                $deviceName = $request->input('device_name', $this->getDeviceNameFromUserAgent($request->userAgent()));
+                $deviceType = $request->input('device_type', $this->getDeviceTypeFromUserAgent($request->userAgent()));
                 
-                MultiDeviceSession::updateActiveTeam($userId, $team->id, session()->getId(), $deviceInfo);
+                // Update or create multi-device session record
+                DB::table('active_team_sessions')
+                    ->updateOrInsert(
+                        [
+                            'session_id' => session()->getId(),
+                            'device_id' => $deviceId
+                        ],
+                        [
+                            'user_id' => $userId,
+                            'team_id' => $team->id,
+                            'device_name' => $deviceName,
+                            'device_type' => $deviceType,
+                            'browser_fingerprint' => $request->input('browser_fingerprint'),
+                            'ip_address' => $request->ip(),
+                            'user_agent' => $request->userAgent(),
+                            'last_activity' => now(),
+                            'created_at' => now(),
+                            'updated_at' => now()
+                        ]
+                    );
             }
             
             \Log::info('Active team set in session', [
@@ -791,9 +804,14 @@ class TeamController extends Controller
             
             // If we have user_id and device_id, try to get from multi-device session first
             if ($userId && $deviceId) {
-                $multiDeviceTeamId = MultiDeviceSession::getActiveTeamForDevice($userId, session()->getId(), $deviceId);
-                if ($multiDeviceTeamId) {
-                    $activeTeamId = $multiDeviceTeamId;
+                $multiDeviceSession = DB::table('active_team_sessions')
+                    ->where('user_id', $userId)
+                    ->where('session_id', session()->getId())
+                    ->where('device_id', $deviceId)
+                    ->first();
+                
+                if ($multiDeviceSession) {
+                    $activeTeamId = $multiDeviceSession->team_id;
                     session(['active_team_id' => $activeTeamId]);
                 }
             }
@@ -814,15 +832,28 @@ class TeamController extends Controller
                         
                         // Also update multi-device session if user_id and device_id provided
                         if ($userId && $deviceId) {
-                            $deviceInfo = [
-                                'device_id' => $deviceId,
-                                'device_name' => $request->input('device_name', MultiDeviceSession::getDeviceNameFromUserAgent($request->userAgent())),
-                                'device_type' => $request->input('device_type', MultiDeviceSession::getDeviceTypeFromUserAgent($request->userAgent())),
-                                'browser_fingerprint' => $request->input('browser_fingerprint'),
-                                'ip_address' => $request->ip(),
-                                'user_agent' => $request->userAgent(),
-                            ];
-                            MultiDeviceSession::updateActiveTeam($userId, $team->id, session()->getId(), $deviceInfo);
+                            $deviceName = $request->input('device_name', $this->getDeviceNameFromUserAgent($request->userAgent()));
+                            $deviceType = $request->input('device_type', $this->getDeviceTypeFromUserAgent($request->userAgent()));
+                            
+                            DB::table('active_team_sessions')
+                                ->updateOrInsert(
+                                    [
+                                        'session_id' => session()->getId(),
+                                        'device_id' => $deviceId
+                                    ],
+                                    [
+                                        'user_id' => $userId,
+                                        'team_id' => $team->id,
+                                        'device_name' => $deviceName,
+                                        'device_type' => $deviceType,
+                                        'browser_fingerprint' => $request->input('browser_fingerprint'),
+                                        'ip_address' => $request->ip(),
+                                        'user_agent' => $request->userAgent(),
+                                        'last_activity' => now(),
+                                        'created_at' => now(),
+                                        'updated_at' => now()
+                                    ]
+                                );
                         }
                     } else {
                         \Log::warning('Team from header not found', ['header_team_id' => $headerTeamId]);
@@ -845,15 +876,28 @@ class TeamController extends Controller
                         
                         // Also update multi-device session if user_id and device_id provided
                         if ($userId && $deviceId) {
-                            $deviceInfo = [
-                                'device_id' => $deviceId,
-                                'device_name' => $request->input('device_name', MultiDeviceSession::getDeviceNameFromUserAgent($request->userAgent())),
-                                'device_type' => $request->input('device_type', MultiDeviceSession::getDeviceTypeFromUserAgent($request->userAgent())),
-                                'browser_fingerprint' => $request->input('browser_fingerprint'),
-                                'ip_address' => $request->ip(),
-                                'user_agent' => $request->userAgent(),
-                            ];
-                            MultiDeviceSession::updateActiveTeam($userId, $latestTeam->id, session()->getId(), $deviceInfo);
+                            $deviceName = $request->input('device_name', $this->getDeviceNameFromUserAgent($request->userAgent()));
+                            $deviceType = $request->input('device_type', $this->getDeviceTypeFromUserAgent($request->userAgent()));
+                            
+                            DB::table('active_team_sessions')
+                                ->updateOrInsert(
+                                    [
+                                        'session_id' => session()->getId(),
+                                        'device_id' => $deviceId
+                                    ],
+                                    [
+                                        'user_id' => $userId,
+                                        'team_id' => $latestTeam->id,
+                                        'device_name' => $deviceName,
+                                        'device_type' => $deviceType,
+                                        'browser_fingerprint' => $request->input('browser_fingerprint'),
+                                        'ip_address' => $request->ip(),
+                                        'user_agent' => $request->userAgent(),
+                                        'last_activity' => now(),
+                                        'created_at' => now(),
+                                        'updated_at' => now()
+                                    ]
+                                );
                         }
                     }
                 }
@@ -913,7 +957,11 @@ class TeamController extends Controller
                 return response()->json(['error' => 'User ID required'], 400);
             }
             
-            $sessions = MultiDeviceSession::getUserActiveSessions($userId);
+            $sessions = DB::table('active_team_sessions')
+                ->where('user_id', $userId)
+                ->where('last_activity', '>', now()->subHours(24))
+                ->orderBy('last_activity', 'desc')
+                ->get();
             
             return response()->json([
                 'sessions' => $sessions,
@@ -933,7 +981,9 @@ class TeamController extends Controller
     {
         try {
             $hours = $request->input('hours', 24);
-            $deletedCount = MultiDeviceSession::cleanupOldSessions($hours);
+            $deletedCount = DB::table('active_team_sessions')
+                ->where('last_activity', '<', now()->subHours($hours))
+                ->delete();
             
             return response()->json([
                 'message' => "Cleaned up {$deletedCount} old sessions",
@@ -944,6 +994,40 @@ class TeamController extends Controller
             \Log::error('Error cleaning up old sessions: ' . $e->getMessage());
             return response()->json(['error' => 'Failed to cleanup sessions'], 500);
         }
+    }
+
+    /**
+     * Get device name from user agent
+     */
+    private function getDeviceNameFromUserAgent($userAgent)
+    {
+        if (preg_match('/Windows NT/', $userAgent)) {
+            return 'Windows PC';
+        } elseif (preg_match('/Macintosh/', $userAgent)) {
+            return 'Mac';
+        } elseif (preg_match('/iPhone/', $userAgent)) {
+            return 'iPhone';
+        } elseif (preg_match('/Android/', $userAgent)) {
+            return 'Android Device';
+        } elseif (preg_match('/iPad/', $userAgent)) {
+            return 'iPad';
+        } elseif (preg_match('/Linux/', $userAgent)) {
+            return 'Linux PC';
+        }
+        return 'Unknown Device';
+    }
+
+    /**
+     * Get device type from user agent
+     */
+    private function getDeviceTypeFromUserAgent($userAgent)
+    {
+        if (preg_match('/Mobile|Android|iPhone|iPad/', $userAgent)) {
+            return 'mobile';
+        } elseif (preg_match('/Tablet|iPad/', $userAgent)) {
+            return 'tablet';
+        }
+        return 'desktop';
     }
 
     /**

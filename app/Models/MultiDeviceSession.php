@@ -10,6 +10,14 @@ class MultiDeviceSession extends Model
 {
     use HasFactory;
 
+    protected $table = 'active_team_sessions';
+    
+    protected $primaryKey = 'id';
+    
+    public $incrementing = true;
+    
+    public $timestamps = true;
+
     protected $fillable = [
         'user_id',
         'team_id',
