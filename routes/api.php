@@ -140,6 +140,7 @@ Route::post('/auth/logout', [AuthController::class, 'logout']);
 Route::get('/auth/me', [AuthController::class, 'me']);
 Route::get('/auth/profile/{id}', [AuthController::class, 'profile']);
 Route::post('/auth/upload-photo', [AuthController::class, 'uploadPhoto']);
+Route::delete('/auth/delete-photo', [AuthController::class, 'deletePhoto']);
 
 Route::middleware('api')->group(function () {
     Route::apiResource('match-teams', MatchTeamController::class);

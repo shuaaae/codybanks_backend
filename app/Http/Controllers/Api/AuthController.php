@@ -117,4 +117,32 @@ class AuthController extends Controller
             return response()->json(['error' => 'Failed to upload photo'], 500);
         }
     }
+
+    public function deletePhoto(Request $request)
+    {
+        try {
+            $request->validate([
+                'user_id' => 'required|integer|exists:users,id'
+            ]);
+
+            $user = User::findOrFail($request->user_id);
+
+            // Delete the photo file if it exists
+            if ($user->photo && file_exists(public_path($user->photo))) {
+                unlink(public_path($user->photo));
+            }
+
+            // Clear the photo path from database
+            $user->photo = null;
+            $user->save();
+
+            return response()->json([
+                'message' => 'Photo deleted successfully',
+                'user' => $user
+            ], 200);
+        } catch (\Exception $e) {
+            \Log::error('Photo delete error: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to delete photo'], 500);
+        }
+    }
 } 
