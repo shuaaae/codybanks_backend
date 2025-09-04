@@ -92,6 +92,42 @@ Route::get('/user-photo/{filename}', function ($filename) {
     }
 });
 
+// Team logo route to serve images from storage
+Route::get('/team-logo/{filename}', function ($filename) {
+    try {
+        // Build the storage file path
+        $imagePath = storage_path("app/public/teams/{$filename}");
+        
+        // Check if the file exists
+        if (!file_exists($imagePath)) {
+            \Log::warning("Team logo not found: {$imagePath}");
+            return response()->json(['error' => 'Image not found'], 404);
+        }
+        
+        // Get the image info
+        $imageInfo = @getimagesize($imagePath);
+        $mimeType = $imageInfo['mime'] ?? 'image/png';
+        
+        // Return the image with optimized headers
+        return response()->file($imagePath, [
+            'Content-Type' => $mimeType,
+            'Access-Control-Allow-Origin' => '*',
+            'Access-Control-Allow-Methods' => 'GET',
+            'Access-Control-Allow-Headers' => 'Content-Type',
+            'Cache-Control' => 'public, max-age=86400, immutable', // Cache for 24 hours
+            'ETag' => md5_file($imagePath), // Enable ETag for better caching
+            'Last-Modified' => gmdate('D, d M Y H:i:s', filemtime($imagePath)) . ' GMT'
+        ]);
+    } catch (\Exception $e) {
+        // Log the error for debugging but don't expose it to client
+        \Log::error("Team logo error: " . $e->getMessage(), [
+            'filename' => $filename,
+            'path' => $imagePath ?? 'unknown'
+        ]);
+        return response()->json(['error' => 'Failed to load image'], 500);
+    }
+});
+
 Route::get('/test-delete/{id}', function ($id) {
     return response()->json([
         'message' => 'Delete test endpoint working',
