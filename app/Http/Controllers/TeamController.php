@@ -461,15 +461,25 @@ class TeamController extends Controller
                 
                 return response()->json($latestTeam);
             } else {
-                \Log::info('No teams found at all, returning 404');
-                return response()->json(['message' => 'No teams found'], 404);
+                \Log::info('No teams found at all, returning empty response');
+                return response()->json([
+                    'message' => 'No teams found',
+                    'teams' => [],
+                    'has_teams' => false
+                ], 200);
             }
         }
 
         $team = Team::find($activeTeamId);
         
         if (!$team) {
-            return response()->json(['message' => 'Active team not found'], 404);
+            \Log::info('Active team not found, clearing session and returning empty response');
+            session()->forget('active_team_id');
+            return response()->json([
+                'message' => 'Active team not found',
+                'teams' => [],
+                'has_teams' => false
+            ], 200);
         }
 
 
