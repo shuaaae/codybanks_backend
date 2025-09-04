@@ -808,27 +808,56 @@ class TeamController extends Controller
             $activeTeamId = session('active_team_id');
             
             if (!$activeTeamId) {
-                // No active team found - try to get the latest team as fallback
-                \Log::info('No active team found, trying to get latest team as fallback');
+                // No active team found - check if team ID is provided in header
+                $headerTeamId = request()->header('X-Active-Team-ID');
                 
-                // Get the most recently created team for this user
-                $latestTeam = Team::orderBy('created_at', 'desc')->first();
-                
-                if ($latestTeam) {
-                    \Log::info('Found latest team as fallback', ['team_id' => $latestTeam->id, 'team_name' => $latestTeam->name]);
+                if ($headerTeamId) {
+                    \Log::info('No active team in session, but team ID provided in header', ['header_team_id' => $headerTeamId]);
                     
-                    // Simplified: Just set the team as active without complex session management
-                    session(['active_team_id' => $latestTeam->id]);
+                    // Verify the team exists
+                    $team = Team::find($headerTeamId);
+                    if ($team) {
+                        \Log::info('Found team from header, setting as active', ['team_id' => $team->id, 'team_name' => $team->name]);
+                        session(['active_team_id' => $team->id]);
+                        $activeTeamId = $team->id;
+                    } else {
+                        \Log::warning('Team from header not found', ['header_team_id' => $headerTeamId]);
+                    }
+                }
+                
+                // If still no active team, try to get the latest team as fallback
+                if (!$activeTeamId) {
+                    \Log::info('No active team found, trying to get latest team as fallback');
+                    
+                    // Get the most recently created team for this user
+                    $latestTeam = Team::orderBy('created_at', 'desc')->first();
+                    
+                    if ($latestTeam) {
+                        \Log::info('Found latest team as fallback', ['team_id' => $latestTeam->id, 'team_name' => $latestTeam->name]);
+                        
+                        // Simplified: Just set the team as active without complex session management
+                        session(['active_team_id' => $latestTeam->id]);
+                        $activeTeamId = $latestTeam->id;
+                    }
+                }
+            }
+            
+            // If we have an active team ID, get the team
+            if ($activeTeamId) {
+                $team = Team::find($activeTeamId);
+                
+                if ($team) {
+                    \Log::info('Found active team', ['team_id' => $team->id, 'team_name' => $team->name]);
                     
                     // Load the team with player relationships to get actual player IDs
-                    $latestTeam->load('players');
+                    $team->load('players');
                     
                     // Create a response that includes both the team data and the actual player records
-                    $responseData = $latestTeam->toArray();
+                    $responseData = $team->toArray();
                     
                     // Check if players relationship loaded correctly
-                    if ($latestTeam->players && method_exists($latestTeam->players, 'map')) {
-                        $responseData['players_data'] = $latestTeam->players->map(function($player) {
+                    if ($team->players && method_exists($team->players, 'map')) {
+                        $responseData['players_data'] = $team->players->map(function($player) {
                             return [
                                 'id' => $player->id,
                                 'name' => $player->name,
@@ -847,16 +876,16 @@ class TeamController extends Controller
                     } else {
                         // Fallback: use the players_data JSON field if relationship failed
                         \Log::warning('Players relationship failed to load, using players_data JSON field', [
-                            'team_id' => $latestTeam->id,
-                            'players_type' => gettype($latestTeam->players),
-                            'players_data_type' => gettype($latestTeam->players_data)
+                            'team_id' => $team->id,
+                            'players_type' => gettype($team->players),
+                            'players_data_type' => gettype($team->players_data)
                         ]);
-                        $responseData['players_data'] = $latestTeam->players_data ?? [];
+                        $responseData['players_data'] = $team->players_data ?? [];
                     }
                     
-                    \Log::info('Returning latest team as fallback with player records', [
-                        'team_id' => $latestTeam->id, 
-                        'team_name' => $latestTeam->name,
+                    \Log::info('Returning active team with player records', [
+                        'team_id' => $team->id, 
+                        'team_name' => $team->name,
                         'player_count' => count($responseData['players_data'])
                     ]);
                     
@@ -869,62 +898,14 @@ class TeamController extends Controller
                         'has_teams' => false
                     ], 200);
                 }
-            }
-            
-            // Get the active team
-            $team = Team::find($activeTeamId);
-            
-            if (!$team) {
-                \Log::warning('Active team not found in database', ['active_team_id' => $activeTeamId]);
-                session()->forget('active_team_id');
+            } else {
+                \Log::info('No teams found at all, returning empty response');
                 return response()->json([
-                    'message' => 'Active team not found',
+                    'message' => 'No teams found',
                     'teams' => [],
                     'has_teams' => false
                 ], 200);
             }
-            
-            // Load the team with player relationships to get actual player IDs
-            $team->load('players');
-            
-            // Create a response that includes both the team data and the actual player records
-            $responseData = $team->toArray();
-            
-            // Check if players relationship loaded correctly
-            if ($team->players && method_exists($team->players, 'map')) {
-                $responseData['players_data'] = $team->players->map(function($player) {
-                    return [
-                        'id' => $player->id,
-                        'name' => $player->name,
-                        'role' => $player->role,
-                        'team_id' => $player->team_id,
-                        'photo' => $player->photo,
-                        'is_substitute' => $player->is_substitute,
-                        'player_code' => $player->player_code,
-                        'notes' => $player->notes,
-                        'primary_player_id' => $player->primary_player_id,
-                        'substitute_order' => $player->substitute_order,
-                        'created_at' => $player->created_at,
-                        'updated_at' => $player->updated_at
-                    ];
-                })->toArray();
-            } else {
-                // Fallback: use the players_data JSON field if relationship failed
-                \Log::warning('Players relationship failed to load, using players_data JSON field', [
-                    'team_id' => $team->id,
-                    'players_type' => gettype($team->players),
-                    'players_data_type' => gettype($team->players_data)
-                ]);
-                $responseData['players_data'] = $team->players_data ?? [];
-            }
-            
-            \Log::info('Returning active team with player records', [
-                'team_id' => $team->id, 
-                'team_name' => $team->name,
-                'player_count' => count($responseData['players_data'])
-            ]);
-            
-            return response()->json($responseData);
             
         } catch (\Exception $e) {
             \Log::error('Error in getActiveTeam: ' . $e->getMessage());
