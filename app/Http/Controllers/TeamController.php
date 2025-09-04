@@ -77,14 +77,25 @@ class TeamController extends Controller
             \Log::info('Creating team with players data:', [
                 'team_name' => $request->name,
                 'players_count' => count($request->players),
-                'players_data' => $request->players
+                'players_data' => $request->players,
+                'raw_request' => $request->all()
             ]);
+
+            // Validate players data is not empty
+            if (empty($request->players) || !is_array($request->players)) {
+                \Log::error('Invalid players data received:', [
+                    'players' => $request->players,
+                    'is_array' => is_array($request->players),
+                    'empty' => empty($request->players)
+                ]);
+                return response()->json(['error' => 'Invalid players data'], 400);
+            }
 
             // Create the team first
             $team = Team::create([
                 'name' => $request->name,
                 'logo_path' => $request->logo_path,
-                'players_data' => $request->players
+                'players_data' => json_encode($request->players)
             ]);
 
             // Create individual Player records for each player
@@ -145,13 +156,18 @@ class TeamController extends Controller
             }
             
             // Update the team with corrected player data
-            $team->update(['players_data' => $correctedPlayersData]);
+            $team->update(['players_data' => json_encode($correctedPlayersData)]);
 
+            // Refresh the team from database to verify data was saved
+            $team->refresh();
+            
             \Log::info('Team created successfully with players', [
                 'team_id' => $team->id,
                 'team_name' => $team->name,
                 'players_count' => count($request->players),
-                'created_players_count' => count($createdPlayers)
+                'created_players_count' => count($createdPlayers),
+                'saved_players_data' => $team->players_data,
+                'corrected_players_data' => $correctedPlayersData
             ]);
 
             return response()->json($team, 201);

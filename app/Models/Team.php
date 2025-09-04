@@ -45,11 +45,14 @@ class Team extends Model
     // Custom accessor for players_data JSON field (renamed to avoid conflict with relationship)
     public function getPlayersDataAttribute()
     {
-        return $this->players_data ?? [];
+        if (is_string($this->attributes['players_data'] ?? null)) {
+            return json_decode($this->attributes['players_data'], true) ?? [];
+        }
+        return $this->attributes['players_data'] ?? [];
     }
 
     public function setPlayersDataAttribute($value)
     {
-        $this->players_data = $value;
+        $this->attributes['players_data'] = $value;
     }
 } 
