@@ -215,6 +215,7 @@ Route::middleware('enable-sessions')->group(function () {
     Route::get('/teams', [TeamController::class, 'index']);
     Route::get('/teams/check-exists', [TeamController::class, 'checkTeamsExist']);
     Route::get('/teams/active', [TeamController::class, 'getActiveTeam']); // MUST come before /teams/{id}
+    Route::get('/teams/active-multi-device', [TeamController::class, 'getActiveTeamMultiDevice']); // Multi-device support
     Route::get('/teams/{id}', [TeamController::class, 'show']);
     Route::post('/teams', [TeamController::class, 'store']);
     Route::post('/teams/set-active', [TeamController::class, 'setActive']);
@@ -226,6 +227,10 @@ Route::middleware('enable-sessions')->group(function () {
     Route::post('/teams/sync-players', [TeamController::class, 'syncTeamPlayers']);
     Route::delete('/teams/{id}', [TeamController::class, 'destroy']);
     Route::post('/teams/force-cleanup-sessions', [TeamController::class, 'forceCleanupSessions']);
+    
+    // Multi-device session management routes
+    Route::get('/teams/user-sessions', [TeamController::class, 'getUserActiveSessions']);
+    Route::post('/teams/cleanup-sessions', [TeamController::class, 'cleanupOldSessions']);
     // Removed auto-cleanup route - no longer needed
     // Removed complex session management routes - no longer needed
     

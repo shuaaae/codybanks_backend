@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Team;
-
 use App\Models\Player;
+use App\Models\MultiDeviceSession;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -379,10 +379,20 @@ class TeamController extends Controller
             ]);
             
             $teamId = $request->input('team_id');
+            $userId = $request->input('user_id'); // Get user_id from request
+            $deviceId = $request->input('device_id'); // Get device_id from request
             
             if ($teamId === null || $teamId === 'null') {
                 // Clear active team from session
                 session()->forget('active_team_id');
+                
+                // Also clear from multi-device session if user_id and device_id provided
+                if ($userId && $deviceId) {
+                    MultiDeviceSession::where('user_id', $userId)
+                        ->where('device_id', $deviceId)
+                        ->where('session_id', session()->getId())
+                        ->delete();
+                }
                 
                 \Log::info('Active team cleared from session');
                 return response()->json([
@@ -396,12 +406,28 @@ class TeamController extends Controller
 
             $team = Team::findOrFail($teamId);
             
-            // Simplified: Just store active team in session without database records
+            // Store active team in session
             session(['active_team_id' => $team->id]);
+            
+            // If user_id and device_id are provided, also store in multi-device session
+            if ($userId && $deviceId) {
+                $deviceInfo = [
+                    'device_id' => $deviceId,
+                    'device_name' => $request->input('device_name', MultiDeviceSession::getDeviceNameFromUserAgent($request->userAgent())),
+                    'device_type' => $request->input('device_type', MultiDeviceSession::getDeviceTypeFromUserAgent($request->userAgent())),
+                    'browser_fingerprint' => $request->input('browser_fingerprint'),
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                ];
+                
+                MultiDeviceSession::updateActiveTeam($userId, $team->id, session()->getId(), $deviceInfo);
+            }
             
             \Log::info('Active team set in session', [
                 'team_id' => $team->id,
                 'team_name' => $team->name,
+                'user_id' => $userId,
+                'device_id' => $deviceId,
                 'session_active_team_id' => session('active_team_id')
             ]);
             
@@ -744,6 +770,180 @@ class TeamController extends Controller
 
         \Log::error('No logo file provided in upload request');
         return response()->json(['error' => 'No logo file provided'], 400);
+    }
+
+    /**
+     * Get active team with multi-device support
+     */
+    public function getActiveTeamMultiDevice(Request $request): JsonResponse
+    {
+        try {
+            \Log::info('getActiveTeamMultiDevice called', [
+                'session_id' => session()->getId(),
+                'request_data' => $request->all()
+            ]);
+            
+            $userId = $request->input('user_id');
+            $deviceId = $request->input('device_id');
+            
+            // Get active team ID from session
+            $activeTeamId = session('active_team_id');
+            
+            // If we have user_id and device_id, try to get from multi-device session first
+            if ($userId && $deviceId) {
+                $multiDeviceTeamId = MultiDeviceSession::getActiveTeamForDevice($userId, session()->getId(), $deviceId);
+                if ($multiDeviceTeamId) {
+                    $activeTeamId = $multiDeviceTeamId;
+                    session(['active_team_id' => $activeTeamId]);
+                }
+            }
+            
+            if (!$activeTeamId) {
+                // No active team found - check if team ID is provided in header
+                $headerTeamId = request()->header('X-Active-Team-ID');
+                
+                if ($headerTeamId) {
+                    \Log::info('No active team in session, but team ID provided in header', ['header_team_id' => $headerTeamId]);
+                    
+                    // Verify the team exists
+                    $team = Team::find($headerTeamId);
+                    if ($team) {
+                        \Log::info('Found team from header, setting as active', ['team_id' => $team->id, 'team_name' => $team->name]);
+                        session(['active_team_id' => $team->id]);
+                        $activeTeamId = $team->id;
+                        
+                        // Also update multi-device session if user_id and device_id provided
+                        if ($userId && $deviceId) {
+                            $deviceInfo = [
+                                'device_id' => $deviceId,
+                                'device_name' => $request->input('device_name', MultiDeviceSession::getDeviceNameFromUserAgent($request->userAgent())),
+                                'device_type' => $request->input('device_type', MultiDeviceSession::getDeviceTypeFromUserAgent($request->userAgent())),
+                                'browser_fingerprint' => $request->input('browser_fingerprint'),
+                                'ip_address' => $request->ip(),
+                                'user_agent' => $request->userAgent(),
+                            ];
+                            MultiDeviceSession::updateActiveTeam($userId, $team->id, session()->getId(), $deviceInfo);
+                        }
+                    } else {
+                        \Log::warning('Team from header not found', ['header_team_id' => $headerTeamId]);
+                    }
+                }
+                
+                // If still no active team, try to get the latest team as fallback
+                if (!$activeTeamId) {
+                    \Log::info('No active team found, trying to get latest team as fallback');
+                    
+                    // Get the most recently created team for this user
+                    $latestTeam = Team::orderBy('created_at', 'desc')->first();
+                    
+                    if ($latestTeam) {
+                        \Log::info('Found latest team as fallback', ['team_id' => $latestTeam->id, 'team_name' => $latestTeam->name]);
+                        
+                        // Set the team as active
+                        session(['active_team_id' => $latestTeam->id]);
+                        $activeTeamId = $latestTeam->id;
+                        
+                        // Also update multi-device session if user_id and device_id provided
+                        if ($userId && $deviceId) {
+                            $deviceInfo = [
+                                'device_id' => $deviceId,
+                                'device_name' => $request->input('device_name', MultiDeviceSession::getDeviceNameFromUserAgent($request->userAgent())),
+                                'device_type' => $request->input('device_type', MultiDeviceSession::getDeviceTypeFromUserAgent($request->userAgent())),
+                                'browser_fingerprint' => $request->input('browser_fingerprint'),
+                                'ip_address' => $request->ip(),
+                                'user_agent' => $request->userAgent(),
+                            ];
+                            MultiDeviceSession::updateActiveTeam($userId, $latestTeam->id, session()->getId(), $deviceInfo);
+                        }
+                    }
+                }
+            }
+            
+            // If we have an active team ID, get the team
+            if ($activeTeamId) {
+                $team = Team::find($activeTeamId);
+                
+                if (!$team) {
+                    \Log::info('Active team not found, clearing session and returning empty response');
+                    session()->forget('active_team_id');
+                    return response()->json([
+                        'message' => 'Active team not found',
+                        'teams' => [],
+                        'has_teams' => false
+                    ], 200);
+                }
+
+                \Log::info('Returning active team', [
+                    'team_id' => $team->id,
+                    'team_name' => $team->name,
+                    'user_id' => $userId,
+                    'device_id' => $deviceId
+                ]);
+
+                return response()->json($team);
+            } else {
+                \Log::info('No teams found at all, returning empty response');
+                return response()->json([
+                    'message' => 'No teams found',
+                    'teams' => [],
+                    'has_teams' => false
+                ], 200);
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error('Error in getActiveTeamMultiDevice: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'error' => 'Failed to get active team: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get user's active sessions across devices
+     */
+    public function getUserActiveSessions(Request $request): JsonResponse
+    {
+        try {
+            $userId = $request->input('user_id');
+            
+            if (!$userId) {
+                return response()->json(['error' => 'User ID required'], 400);
+            }
+            
+            $sessions = MultiDeviceSession::getUserActiveSessions($userId);
+            
+            return response()->json([
+                'sessions' => $sessions,
+                'count' => $sessions->count()
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error getting user active sessions: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to get active sessions'], 500);
+        }
+    }
+
+    /**
+     * Clean up old sessions
+     */
+    public function cleanupOldSessions(Request $request): JsonResponse
+    {
+        try {
+            $hours = $request->input('hours', 24);
+            $deletedCount = MultiDeviceSession::cleanupOldSessions($hours);
+            
+            return response()->json([
+                'message' => "Cleaned up {$deletedCount} old sessions",
+                'deleted_count' => $deletedCount
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error cleaning up old sessions: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to cleanup sessions'], 500);
+        }
     }
 
     /**
