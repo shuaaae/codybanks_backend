@@ -425,6 +425,30 @@ class TeamController extends Controller
     }
 
     /**
+     * Check if any teams exist
+     */
+    public function checkTeamsExist(): JsonResponse
+    {
+        try {
+            $teamCount = Team::count();
+            
+            return response()->json([
+                'has_teams' => $teamCount > 0,
+                'team_count' => $teamCount,
+                'message' => $teamCount > 0 ? 'Teams found' : 'No teams found'
+            ], 200);
+        } catch (\Exception $e) {
+            \Log::error('Error checking teams existence: ' . $e->getMessage());
+            return response()->json([
+                'has_teams' => false,
+                'team_count' => 0,
+                'message' => 'Error checking teams',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Get active team
      */
     public function getActive(): JsonResponse
@@ -838,8 +862,12 @@ class TeamController extends Controller
                     
                     return response()->json($responseData);
                 } else {
-                    \Log::info('No teams found at all, returning 404');
-                    return response()->json(['message' => 'No teams found'], 404);
+                    \Log::info('No teams found at all, returning empty response');
+                    return response()->json([
+                        'message' => 'No teams found',
+                        'teams' => [],
+                        'has_teams' => false
+                    ], 200);
                 }
             }
             
@@ -849,7 +877,11 @@ class TeamController extends Controller
             if (!$team) {
                 \Log::warning('Active team not found in database', ['active_team_id' => $activeTeamId]);
                 session()->forget('active_team_id');
-                return response()->json(['message' => 'Active team not found'], 404);
+                return response()->json([
+                    'message' => 'Active team not found',
+                    'teams' => [],
+                    'has_teams' => false
+                ], 200);
             }
             
             // Load the team with player relationships to get actual player IDs

@@ -177,6 +177,7 @@ Route::middleware('enable-sessions')->group(function () {
     Route::apiResource('matches', GameMatchController::class);
     
     Route::get('/teams', [TeamController::class, 'index']);
+    Route::get('/teams/check-exists', [TeamController::class, 'checkTeamsExist']);
     Route::get('/teams/active', [TeamController::class, 'getActiveTeam']); // MUST come before /teams/{id}
     Route::get('/teams/{id}', [TeamController::class, 'show']);
     Route::post('/teams', [TeamController::class, 'store']);
