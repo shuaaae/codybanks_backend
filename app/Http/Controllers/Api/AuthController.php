@@ -64,6 +64,27 @@ class AuthController extends Controller
         return response()->json(['message' => 'User info endpoint']);
     }
 
+    public function profile($id)
+    {
+        try {
+            $user = User::findOrFail($id);
+            
+            // Return user data with full photo URL
+            $userData = $user->toArray();
+            if ($user->photo) {
+                $userData['photo'] = url($user->photo);
+            }
+            
+            return response()->json([
+                'message' => 'User profile retrieved successfully',
+                'user' => $userData
+            ], 200);
+        } catch (\Exception $e) {
+            \Log::error('Profile fetch error: ' . $e->getMessage());
+            return response()->json(['error' => 'User not found'], 404);
+        }
+    }
+
     public function uploadPhoto(Request $request)
     {
         try {

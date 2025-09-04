@@ -56,6 +56,42 @@ Route::get('/hero-image/{role}/{image}', function ($role, $image) {
     }
 });
 
+// User photo route to serve images from local storage
+Route::get('/user-photo/{filename}', function ($filename) {
+    try {
+        // Build the local file path
+        $imagePath = public_path("users/{$filename}");
+        
+        // Check if the file exists
+        if (!file_exists($imagePath)) {
+            \Log::warning("User photo not found: {$imagePath}");
+            return response()->json(['error' => 'Image not found'], 404);
+        }
+        
+        // Get the image info
+        $imageInfo = @getimagesize($imagePath);
+        $mimeType = $imageInfo['mime'] ?? 'image/jpeg';
+        
+        // Return the image with optimized headers
+        return response()->file($imagePath, [
+            'Content-Type' => $mimeType,
+            'Access-Control-Allow-Origin' => '*',
+            'Access-Control-Allow-Methods' => 'GET',
+            'Access-Control-Allow-Headers' => 'Content-Type',
+            'Cache-Control' => 'public, max-age=86400, immutable', // Cache for 24 hours
+            'ETag' => md5_file($imagePath), // Enable ETag for better caching
+            'Last-Modified' => gmdate('D, d M Y H:i:s', filemtime($imagePath)) . ' GMT'
+        ]);
+    } catch (\Exception $e) {
+        // Log the error for debugging but don't expose it to client
+        \Log::error("User photo error: " . $e->getMessage(), [
+            'filename' => $filename,
+            'path' => $imagePath ?? 'unknown'
+        ]);
+        return response()->json(['error' => 'Failed to load image'], 500);
+    }
+});
+
 Route::get('/test-delete/{id}', function ($id) {
     return response()->json([
         'message' => 'Delete test endpoint working',
@@ -102,6 +138,7 @@ Route::delete('/test-delete-player/{id}', function ($id) {
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::post('/auth/logout', [AuthController::class, 'logout']);
 Route::get('/auth/me', [AuthController::class, 'me']);
+Route::get('/auth/profile/{id}', [AuthController::class, 'profile']);
 Route::post('/auth/upload-photo', [AuthController::class, 'uploadPhoto']);
 
 Route::middleware('api')->group(function () {
