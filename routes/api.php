@@ -10,6 +10,7 @@ use App\Http\Controllers\TeamController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\NotesController;
+use App\Http\Controllers\Api\DraftController;
 
 // Test routes
 Route::get('/test', function () {
@@ -259,3 +260,10 @@ Route::middleware(['api', 'admin'])->group(function () {
 
 // Notes routes (temporarily without authentication for testing)
 Route::apiResource('notes', NotesController::class);
+
+// Draft routes
+Route::post('/drafts', [DraftController::class, 'store']);
+Route::get('/drafts', [DraftController::class, 'index']);
+Route::get('/drafts/{id}', [DraftController::class, 'show']);
+Route::delete('/drafts/{id}', [DraftController::class, 'destroy']);
+Route::get('/drafts/image/{filename}', [DraftController::class, 'serveImage']);
