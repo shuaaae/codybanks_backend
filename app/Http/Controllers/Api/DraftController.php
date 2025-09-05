@@ -57,7 +57,7 @@ class DraftController extends Controller
                 'success' => true,
                 'message' => 'Draft saved successfully',
                 'draft_id' => $draftId,
-                'image_url' => $imageFilename ? url('storage/drafts/' . $imageFilename) : null
+                'image_url' => $imageFilename ? config('app.url') . '/api/drafts/image/' . $imageFilename : null
             ]);
 
         } catch (\Exception $e) {
@@ -90,7 +90,7 @@ class DraftController extends Controller
                         'blue_bans' => json_decode($draft->blue_bans, true),
                         'red_bans' => json_decode($draft->red_bans, true),
                         'custom_lane_assignments' => json_decode($draft->custom_lane_assignments, true),
-                        'image_url' => $draft->image_filename ? url('storage/drafts/' . $draft->image_filename) : null,
+                        'image_url' => $draft->image_filename ? config('app.url') . '/api/drafts/image/' . $draft->image_filename : null,
                         'created_at' => $draft->created_at,
                         'updated_at' => $draft->updated_at
                     ];
@@ -140,7 +140,7 @@ class DraftController extends Controller
                     'blue_bans' => json_decode($draft->blue_bans, true),
                     'red_bans' => json_decode($draft->red_bans, true),
                     'custom_lane_assignments' => json_decode($draft->custom_lane_assignments, true),
-                    'image_url' => $draft->image_filename ? url('storage/drafts/' . $draft->image_filename) : null,
+                    'image_url' => $draft->image_filename ? config('app.url') . '/api/drafts/image/' . $draft->image_filename : null,
                     'created_at' => $draft->created_at,
                     'updated_at' => $draft->updated_at
                 ]
