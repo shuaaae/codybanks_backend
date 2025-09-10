@@ -406,7 +406,8 @@ class GameMatchController extends Controller
                     'match_id' => $matchId,
                     'player_id' => $player->id,
                     'player_name' => $player->name,
-                    'role' => $role
+                    'role' => $role,
+                    'hero' => $playerData['hero'] ?? null,
                 ]);
             }
 
