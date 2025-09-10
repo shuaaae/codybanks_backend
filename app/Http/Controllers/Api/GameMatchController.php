@@ -103,6 +103,9 @@ class GameMatchController extends Controller
                 'teams.*.picks1' => 'required|array',
                 'teams.*.banning_phase2' => 'required|array',
                 'teams.*.picks2' => 'required|array',
+                'player_assignments' => 'nullable|array',
+                'player_assignments.blue' => 'nullable|array',
+                'player_assignments.red' => 'nullable|array',
             ]);
 
             // Create the match
@@ -133,6 +136,27 @@ class GameMatchController extends Controller
                     
                     $teamData['match_id'] = $match->id;
                     MatchTeam::create($teamData);
+                }
+            }
+
+            // Process player assignments if provided (for comprehensive draft data)
+            if (isset($validated['player_assignments']) && is_array($validated['player_assignments'])) {
+                \Log::info('Processing player assignments', [
+                    'match_id' => $match->id,
+                    'player_assignments' => $validated['player_assignments']
+                ]);
+                
+                // Get the team ID for the current team
+                $currentTeamId = $validated['team_id'] ?? $teamId;
+                
+                // Process blue team assignments
+                if (isset($validated['player_assignments']['blue']) && is_array($validated['player_assignments']['blue'])) {
+                    $this->processPlayerAssignments($match->id, $currentTeamId, $validated['player_assignments']['blue'], 'blue');
+                }
+                
+                // Process red team assignments
+                if (isset($validated['player_assignments']['red']) && is_array($validated['player_assignments']['red'])) {
+                    $this->processPlayerAssignments($match->id, $currentTeamId, $validated['player_assignments']['red'], 'red');
                 }
             }
 
@@ -324,5 +348,130 @@ class GameMatchController extends Controller
             
             return response()->json(['error' => 'Failed to delete match: ' . $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Process player assignments for a match
+     */
+    private function processPlayerAssignments($matchId, $teamId, $playerAssignments, $teamColor)
+    {
+        try {
+            \Log::info("Processing player assignments for {$teamColor} team", [
+                'match_id' => $matchId,
+                'team_id' => $teamId,
+                'assignments' => $playerAssignments
+            ]);
+
+            // Clear existing assignments for this match and team
+            \App\Models\MatchPlayerAssignment::where('match_id', $matchId)
+                ->whereHas('player', function($query) use ($teamId) {
+                    $query->where('team_id', $teamId);
+                })
+                ->delete();
+
+            // Create new assignments
+            foreach ($playerAssignments as $index => $playerData) {
+                if (empty($playerData) || !isset($playerData['name']) || !isset($playerData['role'])) {
+                    continue;
+                }
+
+                // Find the player by name and team
+                $player = \App\Models\Player::where('name', $playerData['name'])
+                    ->where('team_id', $teamId)
+                    ->first();
+
+                if (!$player) {
+                    \Log::warning("Player not found for assignment", [
+                        'player_name' => $playerData['name'],
+                        'team_id' => $teamId,
+                        'match_id' => $matchId
+                    ]);
+                    continue;
+                }
+
+                // Normalize role
+                $role = $this->normalizeRole($playerData['role']);
+
+                // Create the assignment
+                \App\Models\MatchPlayerAssignment::create([
+                    'match_id' => $matchId,
+                    'player_id' => $player->id,
+                    'role' => $role,
+                    'is_starting_lineup' => true,
+                    'substitute_order' => null,
+                    'notes' => null
+                ]);
+
+                \Log::info("Created player assignment", [
+                    'match_id' => $matchId,
+                    'player_id' => $player->id,
+                    'player_name' => $player->name,
+                    'role' => $role
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            \Log::error('Error processing player assignments', [
+                'match_id' => $matchId,
+                'team_id' => $teamId,
+                'team_color' => $teamColor,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    /**
+     * Normalize role values to ensure consistency
+     */
+    private function normalizeRole($role)
+    {
+        if (!$role) return $role;
+        
+        $normalizedRole = strtolower(trim($role));
+        
+        // Map various role formats to standard ones
+        $roleMap = [
+            // Standard roles
+            'exp' => 'exp',
+            'mid' => 'mid',
+            'jungler' => 'jungler',
+            'gold' => 'gold',
+            'roam' => 'roam',
+            'sub' => 'substitute',
+            'substitute' => 'substitute',
+            
+            // Common variations
+            'explane' => 'exp',
+            'explaner' => 'exp',
+            'top' => 'exp',
+            'top_laner' => 'exp',
+            'toplaner' => 'exp',
+            
+            'midlane' => 'mid',
+            'mid_laner' => 'mid',
+            'midlaner' => 'mid',
+            'middle' => 'mid',
+            
+            'jungle' => 'jungler',
+            'jungler' => 'jungler',
+            
+            'adc' => 'gold',
+            'marksman' => 'gold',
+            'gold_lane' => 'gold',
+            'goldlane' => 'gold',
+            'carry' => 'gold',
+            
+            'support' => 'roam',
+            'roamer' => 'roam',
+            'roam_lane' => 'roam',
+            'roamlane' => 'roam',
+            
+            'backup' => 'substitute',
+            'reserve' => 'substitute',
+            'sub' => 'substitute'
+        ];
+        
+        return $roleMap[$normalizedRole] ?? $normalizedRole;
     }
 }
