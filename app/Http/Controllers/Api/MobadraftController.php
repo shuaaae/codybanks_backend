@@ -232,12 +232,16 @@ class MobadraftController extends Controller
             'ranked' => [
                 'S' => ['Wanwan', 'Yi Sun-shin', 'Lancelot', 'Floryn', 'Hayabusa', 'Aamon', 'Natan'],
                 'A' => ['Gloo', 'Grock', 'Arlott', 'Fredrinn', 'Kalea', 'Diggie', 'Angela', 'Cici', 'Estes', 'Irithel', 'Alucard', 'Badang', 'Rafaela', 'Franco', 'Fanny', 'Zetian', 'Saber', 'Lapu-Lapu', 'Sun'],
-                'B' => ['Uranus', 'Minsitthar', 'Lesley', 'Chang_e', 'Kadita', 'Hanzo', 'Alice', 'Yu Zhong', 'Belerick', 'Phoveus', 'Kimmy', 'Julian', 'Freya', 'Baxia', 'X.Borg', 'Zhuxin', 'Lolita', 'Gusion', 'Argus', 'Pharsa', 'Ixia', 'Mathilda', 'Selena', 'Tigreal', 'Hanabi', 'Granger', 'Gatotkaca', 'Khufra', 'Eudora', 'Melissa', 'Joy', 'Masha', 'Roger', 'Ruby', 'Carmilla', 'Yve', 'Helcurt', 'Moskov', 'Chou']
+                'B' => ['Uranus', 'Minsitthar', 'Lesley', 'Chang_e', 'Kadita', 'Hanzo', 'Alice', 'Yu Zhong', 'Belerick', 'Phoveus', 'Kimmy', 'Julian', 'Freya', 'Baxia', 'X.Borg', 'Zhuxin', 'Lolita', 'Gusion', 'Argus', 'Pharsa', 'Ixia', 'Mathilda', 'Selena', 'Tigreal', 'Hanabi', 'Granger', 'Gatotkaca', 'Khufra', 'Eudora', 'Melissa', 'Joy', 'Masha', 'Roger', 'Ruby', 'Carmilla', 'Yve', 'Helcurt', 'Moskov', 'Chou'],
+                'C' => ['Natalia', 'Karina', 'Ling', 'Esmeralda', 'Harley', 'Popol and Kupa', 'Lukas', 'Chou'],
+                'D' => ['Nolan', 'Suyou', 'Aamon', 'Benedetta', 'Layla', 'Miya', 'Eudora', 'Tigreal']
             ],
             'esports' => [
                 'S' => ['Wanwan', 'Lancelot', 'Floryn', 'Hayabusa', 'Aamon', 'Natan', 'Gloo'],
                 'A' => ['Grock', 'Arlott', 'Fredrinn', 'Kalea', 'Diggie', 'Angela', 'Cici', 'Estes', 'Irithel', 'Alucard', 'Badang', 'Rafaela', 'Franco', 'Fanny', 'Zetian', 'Saber', 'Lapu-Lapu', 'Sun', 'Yi Sun-shin'],
-                'B' => ['Uranus', 'Minsitthar', 'Lesley', 'Chang_e', 'Kadita', 'Hanzo', 'Alice', 'Yu Zhong', 'Belerick', 'Phoveus', 'Kimmy', 'Julian', 'Freya', 'Baxia', 'X.Borg', 'Zhuxin', 'Lolita', 'Gusion', 'Argus', 'Pharsa', 'Ixia', 'Mathilda', 'Selena', 'Tigreal', 'Hanabi', 'Granger', 'Gatotkaca', 'Khufra', 'Eudora', 'Melissa', 'Joy', 'Masha', 'Roger', 'Ruby', 'Carmilla', 'Yve', 'Helcurt', 'Moskov', 'Chou']
+                'B' => ['Uranus', 'Minsitthar', 'Lesley', 'Chang_e', 'Kadita', 'Hanzo', 'Alice', 'Yu Zhong', 'Belerick', 'Phoveus', 'Kimmy', 'Julian', 'Freya', 'Baxia', 'X.Borg', 'Zhuxin', 'Lolita', 'Gusion', 'Argus', 'Pharsa', 'Ixia', 'Mathilda', 'Selena', 'Tigreal', 'Hanabi', 'Granger', 'Gatotkaca', 'Khufra', 'Eudora', 'Melissa', 'Joy', 'Masha', 'Roger', 'Ruby', 'Carmilla', 'Yve', 'Helcurt', 'Moskov', 'Chou'],
+                'C' => ['Natalia', 'Karina', 'Ling', 'Esmeralda', 'Harley', 'Popol and Kupa', 'Lukas', 'Chou'],
+                'D' => ['Nolan', 'Suyou', 'Aamon', 'Benedetta', 'Layla', 'Miya', 'Eudora', 'Tigreal']
             ]
         ];
         
@@ -257,7 +261,9 @@ class MobadraftController extends Controller
         $tiers = [
             'S' => [],
             'A' => [],
-            'B' => []
+            'B' => [],
+            'C' => [],
+            'D' => []
         ];
         
         // Process heroes based on their tier information
