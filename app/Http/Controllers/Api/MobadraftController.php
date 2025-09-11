@@ -65,8 +65,9 @@ class MobadraftController extends Controller
                 ]);
             }
             
-            // Build URL with parameters
-            $url = $this->baseUrl . '/heroes';
+            // Build URL with parameters based on mode
+            $apiEndpoint = $mode === 'esports' ? '/tournament_statistics' : '/heroes';
+            $url = $this->baseUrl . $apiEndpoint;
             $params = [];
             if ($rank) {
                 $params['rank'] = $rank;
@@ -185,8 +186,9 @@ class MobadraftController extends Controller
             
             Log::info("MobadraftController: No cached data, fetching from mobadraft API");
             
-            // Fetch real data from Mobadraft API
-            $response = Http::timeout(15)->get($this->baseUrl . '/heroes');
+            // Fetch real data from Mobadraft API based on mode
+            $apiEndpoint = $mode === 'esports' ? '/tournament_statistics' : '/heroes';
+            $response = Http::timeout(15)->get($this->baseUrl . $apiEndpoint);
             
             if ($response->successful()) {
                 $data = $response->json();
@@ -277,7 +279,7 @@ class MobadraftController extends Controller
     /**
      * Process real heroes data from Mobadraft API into tier format
      */
-    private function processRealTierData($heroesData, $mode)
+    private function processRealTierData($apiData, $mode)
     {
         $tiers = [
             'S' => [],
@@ -287,15 +289,32 @@ class MobadraftController extends Controller
             'D' => []
         ];
         
-        // Process heroes based on their tier information from the real API
-        if (isset($heroesData['heroes']) && is_array($heroesData['heroes'])) {
-            foreach ($heroesData['heroes'] as $hero) {
-                if (is_array($hero) && count($hero) >= 6) {
-                    $name = $hero[1]; // Hero name is at index 1
-                    $tier = $hero[6]; // Tier is at index 6
-                    
-                    if ($tier && isset($tiers[$tier])) {
-                        $tiers[$tier][] = $name;
+        // Process data based on the API endpoint used
+        if ($mode === 'esports') {
+            // Process tournament statistics data
+            if (isset($apiData['heroes']) && is_array($apiData['heroes'])) {
+                foreach ($apiData['heroes'] as $hero) {
+                    if (is_array($hero) && count($hero) >= 6) {
+                        $name = $hero[1]; // Hero name is at index 1
+                        $tier = $hero[6]; // Tier is at index 6
+                        
+                        if ($tier && isset($tiers[$tier])) {
+                            $tiers[$tier][] = $name;
+                        }
+                    }
+                }
+            }
+        } else {
+            // Process regular heroes data for ranked mode
+            if (isset($apiData['heroes']) && is_array($apiData['heroes'])) {
+                foreach ($apiData['heroes'] as $hero) {
+                    if (is_array($hero) && count($hero) >= 6) {
+                        $name = $hero[1]; // Hero name is at index 1
+                        $tier = $hero[6]; // Tier is at index 6
+                        
+                        if ($tier && isset($tiers[$tier])) {
+                            $tiers[$tier][] = $name;
+                        }
                     }
                 }
             }
@@ -304,7 +323,7 @@ class MobadraftController extends Controller
         return [
             'mode' => $mode,
             'tiers' => $tiers,
-            'last_updated' => $heroesData['updated_at'] ?? now()->toISOString()
+            'last_updated' => $apiData['updated_at'] ?? now()->toISOString()
         ];
     }
 
