@@ -293,7 +293,10 @@ class MobadraftController extends Controller
         Log::info("MobadraftController: Processing data for mode={$mode}", [
             'api_data_keys' => array_keys($apiData),
             'has_heroes' => isset($apiData['heroes']),
-            'heroes_count' => isset($apiData['heroes']) ? count($apiData['heroes']) : 0
+            'heroes_count' => isset($apiData['heroes']) ? count($apiData['heroes']) : 0,
+            'has_statistics' => isset($apiData['statistics']),
+            'statistics_count' => isset($apiData['statistics']) ? count($apiData['statistics']) : 0,
+            'sample_statistics_item' => isset($apiData['statistics']) && count($apiData['statistics']) > 0 ? $apiData['statistics'][0] : null
         ]);
         
         // Process data based on the API endpoint used
@@ -305,6 +308,14 @@ class MobadraftController extends Controller
                     if (is_array($hero) && count($hero) >= 6) {
                         $name = $hero[1]; // Hero name is at index 1
                         $tier = $hero[6]; // Tier is at index 6
+                        
+                        if ($tier && isset($tiers[$tier])) {
+                            $tiers[$tier][] = $name;
+                        }
+                    } elseif (is_array($hero) && isset($hero['name'])) {
+                        // Handle object structure
+                        $name = $hero['name'];
+                        $tier = $hero['tier'] ?? $hero['tier_rank'] ?? 'D';
                         
                         if ($tier && isset($tiers[$tier])) {
                             $tiers[$tier][] = $name;
