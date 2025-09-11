@@ -185,22 +185,44 @@ class MobadraftController extends Controller
             
             Log::info("MobadraftController: No cached data, fetching from mobadraft API");
             
-            // For now, return mock data since we don't know the exact mobadraft API structure
-            // This prevents the 503 error while we work on the real integration
-            $mockTierData = $this->getMockTierData($mode);
+            // Fetch real data from Mobadraft API
+            $response = Http::timeout(15)->get($this->baseUrl . '/heroes');
             
-            // Cache the mock data for 30 minutes
-            Cache::put($cacheKey, $mockTierData, 1800);
-            
-            Log::info("MobadraftController: Returning mock data for mode={$mode}");
-            
-            return response()->json([
-                'success' => true,
-                'data' => $mockTierData,
-                'cached' => false,
-                'mock' => true,
-                'timestamp' => now()->toISOString()
-            ]);
+            if ($response->successful()) {
+                $data = $response->json();
+                
+                // Process the real data into tier format
+                $processedData = $this->processRealTierData($data, $mode);
+                
+                // Cache the processed data for 30 minutes
+                Cache::put($cacheKey, $processedData, 1800);
+                
+                Log::info("MobadraftController: Returning real data for mode={$mode}");
+                
+                return response()->json([
+                    'success' => true,
+                    'data' => $processedData,
+                    'cached' => false,
+                    'mock' => false,
+                    'timestamp' => now()->toISOString()
+                ]);
+            } else {
+                // Fallback to mock data if API fails
+                $mockTierData = $this->getMockTierData($mode);
+                
+                // Cache the mock data for 30 minutes
+                Cache::put($cacheKey, $mockTierData, 1800);
+                
+                Log::info("MobadraftController: API failed, returning mock data for mode={$mode}");
+                
+                return response()->json([
+                    'success' => true,
+                    'data' => $mockTierData,
+                    'cached' => false,
+                    'mock' => true,
+                    'timestamp' => now()->toISOString()
+                ]);
+            }
             
         } catch (\Exception $e) {
             Log::error('Mobadraft API Error (tier_list): ' . $e->getMessage(), [
@@ -253,7 +275,41 @@ class MobadraftController extends Controller
     }
     
     /**
-     * Process raw heroes data into tier format
+     * Process real heroes data from Mobadraft API into tier format
+     */
+    private function processRealTierData($heroesData, $mode)
+    {
+        $tiers = [
+            'S' => [],
+            'A' => [],
+            'B' => [],
+            'C' => [],
+            'D' => []
+        ];
+        
+        // Process heroes based on their tier information from the real API
+        if (isset($heroesData['heroes']) && is_array($heroesData['heroes'])) {
+            foreach ($heroesData['heroes'] as $hero) {
+                if (is_array($hero) && count($hero) >= 6) {
+                    $name = $hero[1]; // Hero name is at index 1
+                    $tier = $hero[6]; // Tier is at index 6
+                    
+                    if ($tier && isset($tiers[$tier])) {
+                        $tiers[$tier][] = $name;
+                    }
+                }
+            }
+        }
+        
+        return [
+            'mode' => $mode,
+            'tiers' => $tiers,
+            'last_updated' => $heroesData['updated_at'] ?? now()->toISOString()
+        ];
+    }
+
+    /**
+     * Process raw heroes data into tier format (legacy method)
      */
     private function processTierData($heroesData, $mode)
     {
