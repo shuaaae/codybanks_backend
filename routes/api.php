@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\NotesController;
 use App\Http\Controllers\Api\DraftController;
+use App\Http\Controllers\Api\MobadraftController;
 
 // Test routes
 Route::get('/test', function () {
@@ -267,3 +268,9 @@ Route::get('/drafts', [DraftController::class, 'index']);
 Route::get('/drafts/{id}', [DraftController::class, 'show']);
 Route::delete('/drafts/{id}', [DraftController::class, 'destroy']);
 Route::get('/drafts/image/{filename}', [DraftController::class, 'serveImage']);
+
+// Mobadraft API proxy routes
+Route::get('/mobadraft/last-updated', [MobadraftController::class, 'getLastUpdated']);
+Route::get('/mobadraft/heroes', [MobadraftController::class, 'getHeroes']);
+Route::get('/mobadraft/tournaments', [MobadraftController::class, 'getTournaments']);
+Route::get('/mobadraft/tier-list', [MobadraftController::class, 'getTierList']);
