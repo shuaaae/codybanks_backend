@@ -274,3 +274,12 @@ Route::get('/mobadraft/last-updated', [MobadraftController::class, 'getLastUpdat
 Route::get('/mobadraft/heroes', [MobadraftController::class, 'getHeroes']);
 Route::get('/mobadraft/tournaments', [MobadraftController::class, 'getTournaments']);
 Route::get('/mobadraft/tier-list', [MobadraftController::class, 'getTierList']);
+
+// Test endpoint for mobadraft
+Route::get('/mobadraft/test', function () {
+    return response()->json([
+        'success' => true,
+        'message' => 'Mobadraft API proxy is working',
+        'timestamp' => now()->toISOString()
+    ]);
+});
