@@ -298,8 +298,21 @@ class MobadraftController extends Controller
         
         // Process data based on the API endpoint used
         if ($mode === 'esports') {
-            // Process tournament statistics data - might have different structure
-            if (isset($apiData['heroes']) && is_array($apiData['heroes'])) {
+            // Process tournament statistics data - uses 'statistics' array instead of 'heroes'
+            if (isset($apiData['statistics']) && is_array($apiData['statistics'])) {
+                Log::info("MobadraftController: Processing esports data from statistics array");
+                foreach ($apiData['statistics'] as $hero) {
+                    if (is_array($hero) && count($hero) >= 6) {
+                        $name = $hero[1]; // Hero name is at index 1
+                        $tier = $hero[6]; // Tier is at index 6
+                        
+                        if ($tier && isset($tiers[$tier])) {
+                            $tiers[$tier][] = $name;
+                        }
+                    }
+                }
+            } elseif (isset($apiData['heroes']) && is_array($apiData['heroes'])) {
+                Log::info("MobadraftController: Processing esports data from heroes array");
                 foreach ($apiData['heroes'] as $hero) {
                     if (is_array($hero) && count($hero) >= 6) {
                         $name = $hero[1]; // Hero name is at index 1
