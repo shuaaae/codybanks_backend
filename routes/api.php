@@ -283,3 +283,32 @@ Route::get('/mobadraft/test', function () {
         'timestamp' => now()->toISOString()
     ]);
 });
+
+Route::get('/mobadraft/debug/tournament', function () {
+    try {
+        $response = Http::timeout(15)->get('https://mobadraft.com/api/tournament_statistics');
+        
+        if ($response->successful()) {
+            $data = $response->json();
+            return response()->json([
+                'success' => true,
+                'raw_data' => $data,
+                'data_keys' => array_keys($data),
+                'has_heroes' => isset($data['heroes']),
+                'heroes_count' => isset($data['heroes']) ? count($data['heroes']) : 0,
+                'sample_hero' => isset($data['heroes']) && count($data['heroes']) > 0 ? $data['heroes'][0] : null
+            ]);
+        } else {
+            return response()->json([
+                'success' => false,
+                'error' => 'API request failed',
+                'status' => $response->status()
+            ]);
+        }
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage()
+        ]);
+    }
+});

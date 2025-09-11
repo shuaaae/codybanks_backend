@@ -289,9 +289,16 @@ class MobadraftController extends Controller
             'D' => []
         ];
         
+        // Log the API response structure for debugging
+        Log::info("MobadraftController: Processing data for mode={$mode}", [
+            'api_data_keys' => array_keys($apiData),
+            'has_heroes' => isset($apiData['heroes']),
+            'heroes_count' => isset($apiData['heroes']) ? count($apiData['heroes']) : 0
+        ]);
+        
         // Process data based on the API endpoint used
         if ($mode === 'esports') {
-            // Process tournament statistics data
+            // Process tournament statistics data - might have different structure
             if (isset($apiData['heroes']) && is_array($apiData['heroes'])) {
                 foreach ($apiData['heroes'] as $hero) {
                     if (is_array($hero) && count($hero) >= 6) {
@@ -300,6 +307,21 @@ class MobadraftController extends Controller
                         
                         if ($tier && isset($tiers[$tier])) {
                             $tiers[$tier][] = $name;
+                        }
+                    }
+                }
+            } else {
+                // Try alternative data structure for tournament statistics
+                Log::info("MobadraftController: Trying alternative data structure for esports");
+                if (isset($apiData['data']) && is_array($apiData['data'])) {
+                    foreach ($apiData['data'] as $hero) {
+                        if (is_array($hero) && count($hero) >= 6) {
+                            $name = $hero[1]; // Hero name is at index 1
+                            $tier = $hero[6]; // Tier is at index 6
+                            
+                            if ($tier && isset($tiers[$tier])) {
+                                $tiers[$tier][] = $name;
+                            }
                         }
                     }
                 }
@@ -319,6 +341,14 @@ class MobadraftController extends Controller
                 }
             }
         }
+        
+        Log::info("MobadraftController: Processed tiers for mode={$mode}", [
+            'S_count' => count($tiers['S']),
+            'A_count' => count($tiers['A']),
+            'B_count' => count($tiers['B']),
+            'C_count' => count($tiers['C']),
+            'D_count' => count($tiers['D'])
+        ]);
         
         return [
             'mode' => $mode,
