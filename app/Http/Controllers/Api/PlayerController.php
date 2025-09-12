@@ -119,7 +119,10 @@ class PlayerController extends Controller
             ], 200);
         }
 
-        return response()->json(['error' => 'Player not found or no photo'], 404);
+        // Return default photo instead of 404 error
+        return response()->json([
+            'photo_path' => 'default-player.png'
+        ], 200);
     }
 
     public function index(Request $request)
