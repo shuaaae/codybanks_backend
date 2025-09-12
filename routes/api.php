@@ -397,17 +397,39 @@ Route::put('/match-player-assignments/update-hero', function (Request $request) 
     }
 });
 
-Route::middleware('api')->group(function () {
-    // Move assign route inside middleware group to prevent redirects
-    Route::match(['OPTIONS', 'POST'], '/match-player-assignments/assign', function (Request $request) {
-        if ($request->isMethod('OPTIONS')) {
-            return response('', 200)
-                ->header('Access-Control-Allow-Origin', '*')
-                ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-                ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-        }
+// Move assign route outside middleware group to ensure CORS headers work
+Route::options('/match-player-assignments/assign', function () {
+    return response('', 200)
+        ->header('Access-Control-Allow-Origin', '*')
+        ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+});
+
+Route::post('/match-player-assignments/assign', function (Request $request) {
+    \Log::info('HIT assign route', [
+        'payload' => $request->all(),
+        'method' => $request->method(),
+        'url' => $request->fullUrl()
+    ]);
+    
+    try {
         return app(App\Http\Controllers\Api\MatchPlayerAssignmentController::class)->assignPlayers($request);
-    });
+    } catch (\Exception $e) {
+        \Log::error('Assign route error', [
+            'error' => $e->getMessage(),
+            'payload' => $request->all()
+        ]);
+        
+        return response()->json([
+            'error' => 'Failed to assign players',
+            'message' => $e->getMessage()
+        ], 500)->header('Access-Control-Allow-Origin', '*')
+          ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+          ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    }
+});
+
+Route::middleware('api')->group(function () {
     
     // Remove update-hero route from middleware group - will add outside
     Route::apiResource('match-teams', MatchTeamController::class);

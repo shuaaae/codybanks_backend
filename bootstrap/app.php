@@ -18,7 +18,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'cors' => \App\Http\Middleware\CustomCorsMiddleware::class,
         ]);
         
-        // Apply CORS middleware to all API routes
+        // Apply CORS middleware globally to all requests
+        $middleware->web(prepend: [
+            \App\Http\Middleware\CustomCorsMiddleware::class,
+        ]);
+        
         $middleware->api(prepend: [
             \App\Http\Middleware\CustomCorsMiddleware::class,
         ]);
