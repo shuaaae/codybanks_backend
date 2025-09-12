@@ -195,8 +195,26 @@ Route::options('/match-player-assignments/assign', function () {
 });
 Route::post('/match-player-assignments/assign', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'assignPlayers']);
 Route::get('/match-player-assignments/match/{match_id}', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getMatchAssignments']);
+Route::options('/match-player-assignments/available-players', function () {
+    return response('', 200)
+        ->header('Access-Control-Allow-Origin', '*')
+        ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+});
 Route::get('/match-player-assignments/available-players', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getAvailablePlayers']);
+Route::options('/match-player-assignments/update-substitute', function () {
+    return response('', 200)
+        ->header('Access-Control-Allow-Origin', '*')
+        ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+});
 Route::put('/match-player-assignments/update-substitute', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'updateSubstituteInfo']);
+Route::options('/match-player-assignments/player-stats', function () {
+    return response('', 200)
+        ->header('Access-Control-Allow-Origin', '*')
+        ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+});
 Route::get('/match-player-assignments/player-stats', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getPlayerMatchStats']);
 Route::options('/match-player-assignments/update-hero', function () {
     return response('', 200)
@@ -205,6 +223,11 @@ Route::options('/match-player-assignments/update-hero', function () {
         ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 });
 Route::put('/match-player-assignments/update-hero', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'updateHeroAssignment']);
+
+// Test route to verify API is working
+Route::get('/test-update-hero', function () {
+    return response()->json(['message' => 'Update hero endpoint is accessible'])->header('Access-Control-Allow-Origin', '*');
+});
 
 Route::middleware('api')->group(function () {
     Route::apiResource('match-teams', MatchTeamController::class);
