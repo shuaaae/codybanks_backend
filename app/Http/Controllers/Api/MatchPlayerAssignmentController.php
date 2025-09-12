@@ -325,7 +325,9 @@ class MatchPlayerAssignmentController extends Controller
             return response()->json([
                 'message' => 'Hero assignment updated successfully',
                 'assignment' => $assignment->fresh()
-            ]);
+            ])->header('Access-Control-Allow-Origin', '*')
+              ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+              ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -338,7 +340,9 @@ class MatchPlayerAssignmentController extends Controller
             return response()->json([
                 'error' => 'Failed to update hero assignment',
                 'message' => $e->getMessage()
-            ], 500);
+            ], 500)->header('Access-Control-Allow-Origin', '*')
+              ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+              ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
         }
     }
 }

@@ -192,6 +192,12 @@ Route::get('/match-player-assignments/match/{match_id}', [App\Http\Controllers\A
 Route::get('/match-player-assignments/available-players', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getAvailablePlayers']);
 Route::put('/match-player-assignments/update-substitute', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'updateSubstituteInfo']);
 Route::get('/match-player-assignments/player-stats', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getPlayerMatchStats']);
+Route::options('/match-player-assignments/update-hero', function () {
+    return response('', 200)
+        ->header('Access-Control-Allow-Origin', '*')
+        ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+});
 Route::put('/match-player-assignments/update-hero', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'updateHeroAssignment']);
 
 Route::middleware('api')->group(function () {
