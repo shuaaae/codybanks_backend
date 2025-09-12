@@ -189,6 +189,7 @@ Route::get('/match-player-assignments/match/{match_id}', [App\Http\Controllers\A
 Route::get('/match-player-assignments/available-players', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getAvailablePlayers']);
 Route::put('/match-player-assignments/update-substitute', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'updateSubstituteInfo']);
 Route::get('/match-player-assignments/player-stats', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getPlayerMatchStats']);
+Route::put('/match-player-assignments/update-hero', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'updateHeroAssignment']);
 Route::get('/heroes', [HeroController::class, 'index']);
 Route::post('/teams/history', [App\Http\Controllers\Api\HeroController::class, 'storeTeamHistory']);
 Route::get('/teams/history', [App\Http\Controllers\Api\HeroController::class, 'getTeamHistory']);

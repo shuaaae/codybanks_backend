@@ -25,6 +25,7 @@ class MatchPlayerAssignmentController extends Controller
             'assignments' => 'required|array',
             'assignments.*.player_id' => 'required|exists:players,id',
             'assignments.*.role' => 'required|in:exp,mid,jungler,gold,roam',
+            'assignments.*.hero_name' => 'nullable|string|max:255',
             'assignments.*.is_starting_lineup' => 'boolean',
             'assignments.*.substitute_order' => 'nullable|integer|min:1',
             'assignments.*.notes' => 'nullable|string'
@@ -50,6 +51,7 @@ class MatchPlayerAssignmentController extends Controller
                     'match_id' => $matchId,
                     'player_id' => $assignment['player_id'],
                     'role' => $assignment['role'],
+                    'hero_name' => $assignment['hero_name'] ?? null,
                     'is_starting_lineup' => $assignment['is_starting_lineup'] ?? true,
                     'substitute_order' => $assignment['substitute_order'] ?? null,
                     'notes' => $assignment['notes'] ?? null
@@ -257,6 +259,80 @@ class MatchPlayerAssignmentController extends Controller
 
             return response()->json([
                 'error' => 'Failed to get player match statistics',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update hero assignment for a specific player in a match
+     */
+    public function updateHeroAssignment(Request $request): JsonResponse
+    {
+        $request->validate([
+            'match_id' => 'required|exists:matches,id',
+            'team_id' => 'required|exists:teams,id',
+            'player_id' => 'required|exists:players,id',
+            'role' => 'required|in:exp,mid,jungler,gold,roam',
+            'old_hero_name' => 'nullable|string',
+            'new_hero_name' => 'required|string|max:255'
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $matchId = $request->input('match_id');
+            $teamId = $request->input('team_id');
+            $playerId = $request->input('player_id');
+            $role = $request->input('role');
+            $oldHeroName = $request->input('old_hero_name');
+            $newHeroName = $request->input('new_hero_name');
+
+            // Find the assignment to update
+            $assignment = MatchPlayerAssignment::where('match_id', $matchId)
+                ->where('player_id', $playerId)
+                ->where('role', $role)
+                ->whereHas('player', function($query) use ($teamId) {
+                    $query->where('team_id', $teamId);
+                })
+                ->first();
+
+            if (!$assignment) {
+                return response()->json([
+                    'error' => 'Player assignment not found'
+                ], 404);
+            }
+
+            // Update the hero name
+            $assignment->update([
+                'hero_name' => $newHeroName
+            ]);
+
+            DB::commit();
+
+            Log::info('Hero assignment updated', [
+                'match_id' => $matchId,
+                'player_id' => $playerId,
+                'role' => $role,
+                'old_hero' => $oldHeroName,
+                'new_hero' => $newHeroName
+            ]);
+
+            return response()->json([
+                'message' => 'Hero assignment updated successfully',
+                'assignment' => $assignment->fresh()
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error updating hero assignment', [
+                'match_id' => $request->input('match_id'),
+                'player_id' => $request->input('player_id'),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to update hero assignment',
                 'message' => $e->getMessage()
             ], 500);
         }
