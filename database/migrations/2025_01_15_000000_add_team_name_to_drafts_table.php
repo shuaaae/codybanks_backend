@@ -12,11 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('drafts', function (Blueprint $table) {
-            // Drop the index that includes team_name
-            $table->dropIndex(['user_id', 'team_name', 'created_at']);
-            
-            // Drop the team_name column
-            $table->dropColumn('team_name');
+            $table->string('team_name')->nullable()->after('red_team_name');
+            $table->index(['user_id', 'team_name', 'created_at']);
         });
     }
 
@@ -26,11 +23,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('drafts', function (Blueprint $table) {
-            // Add back the team_name column
-            $table->string('team_name')->nullable()->after('user_id');
-            
-            // Add back the index
-            $table->index(['user_id', 'team_name', 'created_at']);
+            $table->dropIndex(['user_id', 'team_name', 'created_at']);
+            $table->dropColumn('team_name');
         });
     }
 };

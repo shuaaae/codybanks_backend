@@ -397,6 +397,7 @@ class GameMatchController extends Controller
                     'match_id' => $matchId,
                     'player_id' => $player->id,
                     'role' => $role,
+                    'hero_name' => $playerData['hero_name'] ?? null,
                     'is_starting_lineup' => true,
                     'substitute_order' => null,
                     'notes' => null

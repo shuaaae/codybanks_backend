@@ -11,6 +11,7 @@ class MatchPlayerAssignment extends Model
         'match_id',
         'player_id',
         'role',
+        'hero_name',
         'is_starting_lineup',
         'substitute_order',
         'substituted_in_at',
