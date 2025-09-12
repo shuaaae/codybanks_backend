@@ -413,6 +413,22 @@ Route::post('/match-player-assignments/assign', function (Request $request) {
     ]);
     
     try {
+        // Validate that assignments array is not empty before calling controller
+        $assignments = $request->input('assignments', []);
+        if (empty($assignments)) {
+            \Log::warning('Empty assignments array received', [
+                'payload' => $request->all()
+            ]);
+            
+            return response()->json([
+                'error' => 'No assignments provided',
+                'message' => 'The assignments array cannot be empty. Please ensure players are assigned to lanes before exporting.',
+                'suggestion' => 'Make sure to assign players to each lane in the draft before exporting the match.'
+            ], 400)->header('Access-Control-Allow-Origin', '*')
+              ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+              ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+        }
+        
         return app(App\Http\Controllers\Api\MatchPlayerAssignmentController::class)->assignPlayers($request);
     } catch (\Exception $e) {
         \Log::error('Assign route error', [
