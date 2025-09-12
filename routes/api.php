@@ -180,7 +180,13 @@ Route::get('/auth/profile/{id}', [AuthController::class, 'profile']);
 Route::post('/auth/upload-photo', [AuthController::class, 'uploadPhoto']);
 Route::delete('/auth/delete-photo', [AuthController::class, 'deletePhoto']);
 
-// Match Player Assignment routes (moved outside middleware for accessibility)
+// Match Player Assignment routes (moved outside middleware for CORS)
+Route::options('/match-player-assignments/match/{match_id}', function () {
+    return response('', 200)
+        ->header('Access-Control-Allow-Origin', '*')
+        ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+});
 Route::post('/match-player-assignments/assign', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'assignPlayers']);
 Route::get('/match-player-assignments/match/{match_id}', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getMatchAssignments']);
 Route::get('/match-player-assignments/available-players', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getAvailablePlayers']);
