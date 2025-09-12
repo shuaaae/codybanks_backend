@@ -180,16 +180,15 @@ Route::get('/auth/profile/{id}', [AuthController::class, 'profile']);
 Route::post('/auth/upload-photo', [AuthController::class, 'uploadPhoto']);
 Route::delete('/auth/delete-photo', [AuthController::class, 'deletePhoto']);
 
-// Match Player Assignment routes (moved outside middleware for accessibility)
+Route::middleware('api')->group(function () {
+    Route::apiResource('match-teams', MatchTeamController::class);
+
+// Match Player Assignment routes
 Route::post('/match-player-assignments/assign', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'assignPlayers']);
 Route::get('/match-player-assignments/match/{match_id}', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getMatchAssignments']);
 Route::get('/match-player-assignments/available-players', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getAvailablePlayers']);
 Route::put('/match-player-assignments/update-substitute', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'updateSubstituteInfo']);
 Route::get('/match-player-assignments/player-stats', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getPlayerMatchStats']);
-Route::put('/match-player-assignments/update-hero', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'updateHeroAssignment']);
-
-Route::middleware('api')->group(function () {
-    Route::apiResource('match-teams', MatchTeamController::class);
 Route::get('/heroes', [HeroController::class, 'index']);
 Route::post('/teams/history', [App\Http\Controllers\Api\HeroController::class, 'storeTeamHistory']);
 Route::get('/teams/history', [App\Http\Controllers\Api\HeroController::class, 'getTeamHistory']);
