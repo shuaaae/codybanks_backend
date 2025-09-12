@@ -187,13 +187,7 @@ Route::options('/match-player-assignments/match/{match_id}', function () {
         ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
         ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 });
-Route::options('/match-player-assignments/assign', function () {
-    return response('', 200)
-        ->header('Access-Control-Allow-Origin', '*')
-        ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-});
-Route::post('/match-player-assignments/assign', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'assignPlayers']);
+// Move assign route inside middleware group to prevent redirects
 Route::get('/match-player-assignments/match/{match_id}', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getMatchAssignments']);
 Route::options('/match-player-assignments/available-players', function () {
     return response('', 200)
@@ -222,12 +216,27 @@ Route::options('/match-player-assignments/update-hero', function () {
         ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
         ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 });
-// Test route to verify API is working
+// Test routes to verify API is working
 Route::get('/test-update-hero', function () {
     return response()->json(['message' => 'Update hero endpoint is accessible'])->header('Access-Control-Allow-Origin', '*');
 });
 
+Route::get('/test-assign', function () {
+    return response()->json(['message' => 'Assign endpoint is accessible'])->header('Access-Control-Allow-Origin', '*');
+});
+
 Route::middleware('api')->group(function () {
+    // Move assign route inside middleware group to prevent redirects
+    Route::match(['OPTIONS', 'POST'], '/match-player-assignments/assign', function (Request $request) {
+        if ($request->isMethod('OPTIONS')) {
+            return response('', 200)
+                ->header('Access-Control-Allow-Origin', '*')
+                ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+                ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+        }
+        return app(App\Http\Controllers\Api\MatchPlayerAssignmentController::class)->assignPlayers($request);
+    });
+    
     // Move update-hero route inside middleware group with explicit method
     Route::match(['OPTIONS', 'PUT'], '/match-player-assignments/update-hero', function (Request $request) {
         if ($request->isMethod('OPTIONS')) {
