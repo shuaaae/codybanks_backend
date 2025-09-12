@@ -88,15 +88,24 @@ class MatchPlayerAssignmentController extends Controller
     /**
      * Get player assignments for a match
      */
-    public function getMatchAssignments(Request $request): JsonResponse
+    public function getMatchAssignments(Request $request, $match_id): JsonResponse
     {
         $request->validate([
-            'match_id' => 'required|exists:matches,id',
             'team_id' => 'required|exists:teams,id'
         ]);
 
+        // Validate match_id from route parameter
+        if (!\App\Models\GameMatch::where('id', $match_id)->exists()) {
+            return response()->json([
+                'error' => 'Match not found',
+                'message' => 'The specified match does not exist'
+            ], 404)->header('Access-Control-Allow-Origin', '*')
+              ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+              ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+        }
+
         try {
-            $matchId = $request->input('match_id');
+            $matchId = $match_id;
             $teamId = $request->input('team_id');
 
             $assignments = MatchPlayerAssignment::where('match_id', $matchId)
@@ -120,7 +129,7 @@ class MatchPlayerAssignmentController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Error getting match assignments', [
-                'match_id' => $request->input('match_id'),
+                'match_id' => $matchId,
                 'error' => $e->getMessage()
             ]);
 
