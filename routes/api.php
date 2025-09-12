@@ -222,14 +222,22 @@ Route::options('/match-player-assignments/update-hero', function () {
         ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
         ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 });
-Route::put('/match-player-assignments/update-hero', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'updateHeroAssignment']);
-
 // Test route to verify API is working
 Route::get('/test-update-hero', function () {
     return response()->json(['message' => 'Update hero endpoint is accessible'])->header('Access-Control-Allow-Origin', '*');
 });
 
 Route::middleware('api')->group(function () {
+    // Move update-hero route inside middleware group with explicit method
+    Route::match(['OPTIONS', 'PUT'], '/match-player-assignments/update-hero', function (Request $request) {
+        if ($request->isMethod('OPTIONS')) {
+            return response('', 200)
+                ->header('Access-Control-Allow-Origin', '*')
+                ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+                ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+        }
+        return app(App\Http\Controllers\Api\MatchPlayerAssignmentController::class)->updateHeroAssignment($request);
+    });
     Route::apiResource('match-teams', MatchTeamController::class);
 Route::get('/heroes', [HeroController::class, 'index']);
 Route::post('/teams/history', [App\Http\Controllers\Api\HeroController::class, 'storeTeamHistory']);
