@@ -273,6 +273,7 @@ Route::get('/matches-with-assignments/{teamId}', function ($teamId) {
                             return [
                                 'hero' => $assignment->hero_name ?? $pick,
                                 'name' => $assignment->hero_name ?? $pick,
+                                'lane' => $role, // Add lane information
                                 'player' => [
                                     'name' => $assignment->player->name,
                                     'role' => $assignment->player->role
@@ -283,7 +284,7 @@ Route::get('/matches-with-assignments/{teamId}', function ($teamId) {
                     }
                     
                     // Fallback to original pick data
-                    return is_array($pick) ? $pick : ['hero' => $pick, 'name' => $pick];
+                    return is_array($pick) ? array_merge($pick, ['lane' => $role]) : ['hero' => $pick, 'name' => $pick, 'lane' => $role];
                 })->toArray();
                 
                 $transformedPicks2 = collect($team->picks2 ?? [])->map(function($pick, $index) use ($assignments) {
@@ -297,6 +298,7 @@ Route::get('/matches-with-assignments/{teamId}', function ($teamId) {
                             return [
                                 'hero' => $assignment->hero_name ?? $pick,
                                 'name' => $assignment->hero_name ?? $pick,
+                                'lane' => $role, // Add lane information
                                 'player' => [
                                     'name' => $assignment->player->name,
                                     'role' => $assignment->player->role
