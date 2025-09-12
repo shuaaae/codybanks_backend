@@ -19,6 +19,7 @@ class DraftController extends Controller
             $request->validate([
                 'blue_team_name' => 'required|string|max:255',
                 'red_team_name' => 'required|string|max:255',
+                'team_name' => 'nullable|string|max:255', // Current team name for filtering
                 'blue_picks' => 'required|array',
                 'red_picks' => 'required|array',
                 'blue_bans' => 'required|array',
@@ -43,6 +44,7 @@ class DraftController extends Controller
                 'user_id' => $request->user_id,
                 'blue_team_name' => $request->blue_team_name,
                 'red_team_name' => $request->red_team_name,
+                'team_name' => $request->team_name, // Current team name for filtering
                 'blue_picks' => json_encode($request->blue_picks),
                 'red_picks' => json_encode($request->red_picks),
                 'blue_bans' => json_encode($request->blue_bans),
@@ -69,22 +71,29 @@ class DraftController extends Controller
     }
 
     /**
-     * Get all drafts for a user
+     * Get all drafts for a user, optionally filtered by team name
      */
     public function index(Request $request)
     {
         try {
             $userId = $request->user_id;
+            $teamName = $request->team_name; // Optional team name filter
             
-            $drafts = DB::table('drafts')
-                ->where('user_id', $userId)
-                ->orderBy('created_at', 'desc')
+            $query = DB::table('drafts')->where('user_id', $userId);
+            
+            // Filter by team name if provided
+            if ($teamName) {
+                $query->where('team_name', $teamName);
+            }
+            
+            $drafts = $query->orderBy('created_at', 'desc')
                 ->get()
                 ->map(function ($draft) {
                     return [
                         'id' => $draft->id,
                         'blue_team_name' => $draft->blue_team_name,
                         'red_team_name' => $draft->red_team_name,
+                        'team_name' => $draft->team_name, // Include team name in response
                         'blue_picks' => json_decode($draft->blue_picks, true),
                         'red_picks' => json_decode($draft->red_picks, true),
                         'blue_bans' => json_decode($draft->blue_bans, true),
