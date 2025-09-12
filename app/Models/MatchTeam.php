@@ -30,10 +30,4 @@ class MatchTeam extends Model
     {
         return $this->belongsTo(GameMatch::class, 'match_id');
     }
-
-    // Relationship to player assignments
-    public function playerAssignments()
-    {
-        return $this->hasMany(MatchPlayerAssignment::class, 'match_id', 'match_id');
-    }
 }
