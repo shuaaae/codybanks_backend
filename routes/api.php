@@ -229,6 +229,47 @@ Route::put('/test-update-hero-put', function () {
     return response()->json(['message' => 'Update hero PUT endpoint is accessible'])->header('Access-Control-Allow-Origin', '*');
 });
 
+// Preferred route using assignment_id (more reliable)
+Route::put('/match-player-assignments/{assignment}/hero', function (Request $request, \App\Models\MatchPlayerAssignment $assignment) {
+    \Log::info('HIT assignment-specific update-hero', [
+        'assignment_id' => $assignment->id,
+        'payload' => $request->all()
+    ]);
+
+    try {
+        $request->validate([
+            'new_hero_name' => 'required|string|max:255'
+        ]);
+
+        $assignment->update(['hero_name' => $request->new_hero_name]);
+
+        \Log::info('Assignment updated via ID route', [
+            'assignment_id' => $assignment->id,
+            'new_hero_name' => $request->new_hero_name
+        ]);
+
+        return response()->json([
+            'message' => 'Hero updated',
+            'assignment' => $assignment->fresh()
+        ])->header('Access-Control-Allow-Origin', '*')
+          ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+          ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+
+    } catch (\Exception $e) {
+        \Log::error('Assignment-specific update error', [
+            'assignment_id' => $assignment->id,
+            'error' => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'error' => 'Failed to update hero',
+            'message' => $e->getMessage()
+        ], 500)->header('Access-Control-Allow-Origin', '*')
+          ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+          ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    }
+});
+
 // Update-hero route outside middleware group for direct access
 Route::options('/match-player-assignments/update-hero', function () {
     return response('', 200)
@@ -239,13 +280,20 @@ Route::options('/match-player-assignments/update-hero', function () {
 
 // Direct route for update-hero that bypasses potential controller issues
 Route::put('/match-player-assignments/update-hero', function (Request $request) {
+    \Log::info('HIT update-hero', [
+        'payload' => $request->all(),
+        'headers' => $request->headers->all(),
+        'method' => $request->method(),
+        'url' => $request->fullUrl()
+    ]);
+
     try {
         // Validate required fields
         $request->validate([
             'match_id' => 'required|exists:matches,id',
             'team_id' => 'required|exists:teams,id',
             'player_id' => 'required|exists:players,id',
-            'role' => 'required|in:exp,mid,jungler,gold,roam',
+            'role' => 'required|string',
             'old_hero_name' => 'nullable|string',
             'new_hero_name' => 'required|string|max:255'
         ]);
@@ -257,26 +305,73 @@ Route::put('/match-player-assignments/update-hero', function (Request $request) 
         $oldHeroName = $request->input('old_hero_name');
         $newHeroName = $request->input('new_hero_name');
 
-        // Find the assignment to update
+        // Normalize role names
+        $roleMap = [
+            'xp' => 'exp',
+            'exp' => 'exp',
+            'mid' => 'mid',
+            'jungle' => 'jungler',
+            'jungler' => 'jungler',
+            'gold' => 'gold',
+            'gold lane' => 'gold',
+            'roam' => 'roam',
+            'roamer' => 'roam'
+        ];
+        
+        $normalizedRole = strtolower(trim($role));
+        $canonicalRole = $roleMap[$normalizedRole] ?? $normalizedRole;
+        
+        \Log::info('Role normalization', [
+            'original_role' => $role,
+            'normalized_role' => $normalizedRole,
+            'canonical_role' => $canonicalRole
+        ]);
+
+        // Try to find existing assignment with strict criteria first
         $assignment = \App\Models\MatchPlayerAssignment::where('match_id', $matchId)
             ->where('player_id', $playerId)
-            ->where('role', $role)
+            ->where('role', $canonicalRole)
             ->whereHas('player', function($query) use ($teamId) {
                 $query->where('team_id', $teamId);
             })
             ->first();
 
+        \Log::info('Assignment lookup result', [
+            'found' => $assignment ? true : false,
+            'assignment_id' => $assignment ? $assignment->id : null,
+            'criteria' => [
+                'match_id' => $matchId,
+                'player_id' => $playerId,
+                'role' => $canonicalRole,
+                'team_id' => $teamId
+            ]
+        ]);
+
+        // If not found, try upsert approach
         if (!$assignment) {
-            return response()->json([
-                'error' => 'Player assignment not found'
-            ], 404)->header('Access-Control-Allow-Origin', '*')
-              ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-              ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+            \Log::info('Assignment not found, trying upsert approach');
+            
+            $assignment = \App\Models\MatchPlayerAssignment::firstOrNew([
+                'match_id' => $matchId,
+                'player_id' => $playerId,
+                'role' => $canonicalRole,
+            ]);
+            
+            // Set additional fields if creating new
+            if (!$assignment->exists) {
+                $assignment->is_starting_lineup = true;
+                $assignment->substitute_order = null;
+                $assignment->notes = null;
+            }
         }
 
         // Update the hero name
-        $assignment->update([
-            'hero_name' => $newHeroName
+        $assignment->hero_name = $newHeroName;
+        $assignment->save();
+
+        \Log::info('Assignment updated successfully', [
+            'assignment_id' => $assignment->id,
+            'new_hero_name' => $newHeroName
         ]);
 
         return response()->json([
@@ -287,6 +382,12 @@ Route::put('/match-player-assignments/update-hero', function (Request $request) 
           ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 
     } catch (\Exception $e) {
+        \Log::error('Update-hero error', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+            'payload' => $request->all()
+        ]);
+        
         return response()->json([
             'error' => 'Failed to update hero assignment',
             'message' => $e->getMessage()
