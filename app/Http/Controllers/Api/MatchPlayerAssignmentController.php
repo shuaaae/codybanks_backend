@@ -7,6 +7,7 @@ use App\Models\GameMatch;
 use App\Models\MatchPlayerAssignment;
 use App\Models\Player;
 use App\Models\Team;
+use App\Services\MatchHeroSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -296,8 +297,6 @@ class MatchPlayerAssignmentController extends Controller
         ]);
 
         try {
-            DB::beginTransaction();
-
             $matchId = $request->input('match_id');
             $teamId = $request->input('team_id');
             $playerId = $request->input('player_id');
@@ -320,14 +319,11 @@ class MatchPlayerAssignmentController extends Controller
                 ], 404);
             }
 
-            // Update the hero name
-            $assignment->update([
-                'hero_name' => $newHeroName
-            ]);
+            // Use the sync service to update hero and sync with match teams
+            $syncService = new MatchHeroSyncService();
+            $syncService->syncHeroToMatchTeams($matchId, $teamId, $playerId, $role, $newHeroName);
 
-            DB::commit();
-
-            Log::info('Hero assignment updated', [
+            Log::info('Hero assignment updated and synced', [
                 'match_id' => $matchId,
                 'player_id' => $playerId,
                 'role' => $role,
@@ -336,14 +332,13 @@ class MatchPlayerAssignmentController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Hero assignment updated successfully',
+                'message' => 'Hero assignment updated successfully and synced with match teams',
                 'assignment' => $assignment->fresh()
             ])->header('Access-Control-Allow-Origin', '*')
               ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
               ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 
         } catch (\Exception $e) {
-            DB::rollBack();
             Log::error('Error updating hero assignment', [
                 'match_id' => $request->input('match_id'),
                 'player_id' => $request->input('player_id'),
@@ -352,6 +347,66 @@ class MatchPlayerAssignmentController extends Controller
 
             return response()->json([
                 'error' => 'Failed to update hero assignment',
+                'message' => $e->getMessage()
+            ], 500)->header('Access-Control-Allow-Origin', '*')
+              ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+              ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+        }
+    }
+
+    /**
+     * Get match data with synchronized teams and hero assignments
+     */
+    public function getMatchWithSync(Request $request, $match_id): JsonResponse
+    {
+        $request->validate([
+            'team_id' => 'required|exists:teams,id'
+        ]);
+
+        try {
+            $teamId = $request->input('team_id');
+            
+            // Get the match with all related data
+            $match = GameMatch::where('id', $match_id)
+                ->where('team_id', $teamId)
+                ->with([
+                    'teams:id,match_id,team,team_color,banning_phase1,banning_phase2,picks1,picks2',
+                    'playerAssignments.player:id,name,role,photo,is_substitute,player_code'
+                ])
+                ->first();
+
+            if (!$match) {
+                return response()->json([
+                    'error' => 'Match not found or access denied'
+                ], 404);
+            }
+
+            // Sync all heroes to ensure match teams data is up to date
+            $syncService = new MatchHeroSyncService();
+            $syncService->syncAllHeroesToMatchTeams($match->id);
+
+            // Reload the match with updated data
+            $match->load([
+                'teams:id,match_id,team,team_color,banning_phase1,banning_phase2,picks1,picks2',
+                'playerAssignments.player:id,name,role,photo,is_substitute,player_code'
+            ]);
+
+            return response()->json([
+                'match' => $match,
+                'message' => 'Match data synchronized successfully'
+            ])->header('Access-Control-Allow-Origin', '*')
+              ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+              ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+
+        } catch (\Exception $e) {
+            Log::error('Error getting match with sync', [
+                'match_id' => $match_id,
+                'team_id' => $request->input('team_id'),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to get synchronized match data',
                 'message' => $e->getMessage()
             ], 500)->header('Access-Control-Allow-Origin', '*')
               ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')

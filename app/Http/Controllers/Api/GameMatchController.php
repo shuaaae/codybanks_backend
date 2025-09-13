@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\GameMatch;
 use App\Models\MatchTeam;
+use App\Services\MatchHeroSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -228,7 +229,54 @@ class GameMatchController extends Controller
      */
     public function show(string $id)
     {
-        //
+        try {
+            // Get the active team ID from session or request header
+            $activeTeamId = session('active_team_id');
+            
+            if (!$activeTeamId) {
+                $activeTeamId = request()->header('X-Active-Team-ID');
+            }
+
+            if (!$activeTeamId) {
+                return response()->json(['error' => 'No active team found'], 404);
+            }
+
+            $match = GameMatch::where('id', $id)
+                ->where('team_id', $activeTeamId)
+                ->with([
+                    'teams:id,match_id,team,team_color,banning_phase1,banning_phase2,picks1,picks2',
+                    'playerAssignments.player:id,name,role,photo,is_substitute,player_code'
+                ])
+                ->first();
+
+            if (!$match) {
+                return response()->json(['error' => 'Match not found or access denied'], 404);
+            }
+
+            // Sync heroes to ensure match teams data is up to date
+            $syncService = new MatchHeroSyncService();
+            $syncService->syncAllHeroesToMatchTeams($match->id);
+
+            // Reload the match with updated data
+            $match->load([
+                'teams:id,match_id,team,team_color,banning_phase1,banning_phase2,picks1,picks2',
+                'playerAssignments.player:id,name,role,photo,is_substitute,player_code'
+            ]);
+
+            return response()->json($match);
+
+        } catch (\Exception $e) {
+            \Log::error('GameMatchController::show error', [
+                'match_id' => $id,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'error' => 'Failed to get match',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -328,6 +376,10 @@ class GameMatchController extends Controller
                 $t['match_id'] = $match->id;
                 MatchTeam::create($t);
             }
+
+            // Sync all hero assignments to match teams data
+            $syncService = new MatchHeroSyncService();
+            $syncService->syncAllHeroesToMatchTeams($match->id);
 
             // Return the fresh match with its new teams
             $match->load([

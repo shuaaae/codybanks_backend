@@ -473,6 +473,7 @@ Route::get('/players/{playerName}/hero-h2h-stats-by-team', [PlayerController::cl
 Route::middleware('enable-sessions')->group(function () {
     // Matches endpoints (moved here to access session data)
     Route::apiResource('matches', GameMatchController::class);
+    Route::get('/matches/{id}/sync', [GameMatchController::class, 'show']);
     
     Route::get('/teams', [TeamController::class, 'index']);
     Route::get('/teams/check-exists', [TeamController::class, 'checkTeamsExist']);
@@ -571,4 +572,17 @@ Route::get('/mobadraft/debug/tournament', function () {
             'error' => $e->getMessage()
         ]);
     }
+});
+
+// Get match with synchronized teams and hero assignments
+Route::options('/match-player-assignments/{match_id}/sync', function () {
+    return response()->json(['message' => 'OK'], 200)
+        ->header('Access-Control-Allow-Origin', '*')
+        ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+});
+
+Route::get('/match-player-assignments/{match_id}/sync', function (Request $request, $match_id) {
+    $controller = new \App\Http\Controllers\Api\MatchPlayerAssignmentController();
+    return $controller->getMatchWithSync($request, $match_id);
 });
