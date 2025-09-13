@@ -2,6 +2,99 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+
+// Helper function to update match.teams data when hero is changed
+function updateMatchTeamsData($matchId, $playerId, $role, $newHeroName) {
+    try {
+        // Get the player information
+        $player = \App\Models\Player::find($playerId);
+        if (!$player) {
+            \Log::warning("Player not found for ID: {$playerId}");
+            return;
+        }
+
+        // Get the match
+        $match = \App\Models\GameMatch::find($matchId);
+        if (!$match) {
+            \Log::warning("Match not found for ID: {$matchId}");
+            return;
+        }
+
+        // Get all teams for this match
+        $teams = \App\Models\MatchTeam::where('match_id', $matchId)->get();
+        
+        foreach ($teams as $team) {
+            $picks1 = $team->picks1 ?? [];
+            $picks2 = $team->picks2 ?? [];
+            $updated = false;
+
+            // Update picks1
+            foreach ($picks1 as $index => $pick) {
+                if (is_array($pick) && isset($pick['player']) && isset($pick['lane'])) {
+                    $pickPlayerName = is_object($pick['player']) ? $pick['player']->name : $pick['player'];
+                    $pickRole = $pick['lane'] ?? '';
+                    
+                    // Normalize role names for comparison
+                    $roleMap = [
+                        'xp' => 'exp', 'exp' => 'exp', 'mid' => 'mid',
+                        'jungle' => 'jungler', 'jungler' => 'jungler',
+                        'gold' => 'gold', 'roam' => 'roam', 'roamer' => 'roam'
+                    ];
+                    $normalizedPickRole = strtolower(trim($pickRole));
+                    $canonicalPickRole = $roleMap[$normalizedPickRole] ?? $normalizedPickRole;
+                    
+                    if ($pickPlayerName === $player->name && $canonicalPickRole === $role) {
+                        $picks1[$index]['hero'] = $newHeroName;
+                        $picks1[$index]['name'] = $newHeroName;
+                        $updated = true;
+                        \Log::info("Updated picks1 for player {$player->name} in role {$role} to hero {$newHeroName}");
+                    }
+                }
+            }
+
+            // Update picks2
+            foreach ($picks2 as $index => $pick) {
+                if (is_array($pick) && isset($pick['player']) && isset($pick['lane'])) {
+                    $pickPlayerName = is_object($pick['player']) ? $pick['player']->name : $pick['player'];
+                    $pickRole = $pick['lane'] ?? '';
+                    
+                    // Normalize role names for comparison
+                    $roleMap = [
+                        'xp' => 'exp', 'exp' => 'exp', 'mid' => 'mid',
+                        'jungle' => 'jungler', 'jungler' => 'jungler',
+                        'gold' => 'gold', 'roam' => 'roam', 'roamer' => 'roam'
+                    ];
+                    $normalizedPickRole = strtolower(trim($pickRole));
+                    $canonicalPickRole = $roleMap[$normalizedPickRole] ?? $normalizedPickRole;
+                    
+                    if ($pickPlayerName === $player->name && $canonicalPickRole === $role) {
+                        $picks2[$index]['hero'] = $newHeroName;
+                        $picks2[$index]['name'] = $newHeroName;
+                        $updated = true;
+                        \Log::info("Updated picks2 for player {$player->name} in role {$role} to hero {$newHeroName}");
+                    }
+                }
+            }
+
+            // Save the updated picks if any changes were made
+            if ($updated) {
+                $team->picks1 = $picks1;
+                $team->picks2 = $picks2;
+                $team->save();
+                \Log::info("Updated match.teams data for match {$matchId}, team {$team->team}");
+            }
+        }
+
+    } catch (\Exception $e) {
+        \Log::error('Error updating match.teams data', [
+            'match_id' => $matchId,
+            'player_id' => $playerId,
+            'role' => $role,
+            'new_hero_name' => $newHeroName,
+            'error' => $e->getMessage()
+        ]);
+    }
+}
 use App\Http\Controllers\Api\GameMatchController;
 use App\Http\Controllers\MatchTeamController;
 use App\Http\Controllers\Api\HeroController;
@@ -243,6 +336,9 @@ Route::put('/match-player-assignments/{assignment}/hero', function (Request $req
 
         $assignment->update(['hero_name' => $request->new_hero_name]);
 
+        // CRITICAL: Also update the match.teams data to reflect the hero change
+        updateMatchTeamsData($assignment->match_id, $assignment->player_id, $assignment->role, $request->new_hero_name);
+
         \Log::info('Assignment updated via ID route', [
             'assignment_id' => $assignment->id,
             'new_hero_name' => $request->new_hero_name
@@ -369,6 +465,9 @@ Route::put('/match-player-assignments/update-hero', function (Request $request) 
         $assignment->hero_name = $newHeroName;
         $assignment->save();
 
+        // CRITICAL: Also update the match.teams data to reflect the hero change
+        updateMatchTeamsData($matchId, $playerId, $role, $newHeroName);
+
         \Log::info('Assignment updated successfully', [
             'assignment_id' => $assignment->id,
             'new_hero_name' => $newHeroName
@@ -473,7 +572,6 @@ Route::get('/players/{playerName}/hero-h2h-stats-by-team', [PlayerController::cl
 Route::middleware('enable-sessions')->group(function () {
     // Matches endpoints (moved here to access session data)
     Route::apiResource('matches', GameMatchController::class);
-    Route::get('/matches-with-assignments', [GameMatchController::class, 'getMatchesWithAssignments']);
     
     Route::get('/teams', [TeamController::class, 'index']);
     Route::get('/teams/check-exists', [TeamController::class, 'checkTeamsExist']);
