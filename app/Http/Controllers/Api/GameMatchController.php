@@ -23,13 +23,25 @@ class GameMatchController extends Controller
             // Get match_type from query parameter
             $matchType = $request->query('match_type', 'scrim');
             
+            // Debug logging
+            \Log::info('GET /api/matches called', [
+                'query_team_id' => $request->query('team_id'),
+                'parsed_team_id' => $teamId,
+                'match_type' => $matchType,
+                'session_team_id' => session('active_team_id'),
+                'header_team_id' => $request->header('X-Active-Team-ID'),
+                'all_headers' => $request->headers->all()
+            ]);
+            
             // If no team_id in query, get from session or header
             if (!$teamId) {
                 $teamId = session('active_team_id');
+                \Log::info('Using session team_id', ['team_id' => $teamId]);
             }
             
             if (!$teamId) {
                 $teamId = $request->header('X-Active-Team-ID');
+                \Log::info('Using header team_id', ['team_id' => $teamId]);
             }
             
             // If still no team_id, try to get the latest team as fallback
@@ -37,14 +49,30 @@ class GameMatchController extends Controller
                 $latestTeam = \App\Models\Team::orderBy('created_at', 'desc')->first();
                 if ($latestTeam) {
                     $teamId = $latestTeam->id;
-                    \Log::info('Using latest team as fallback', ['team_id' => $teamId]);
+                    \Log::info('Using latest team as fallback', ['team_id' => $teamId, 'team_name' => $latestTeam->name]);
                 }
             }
 
             // CRITICAL FIX: Always filter by team ID to prevent data mixing
             if (!$teamId) {
+                \Log::warning('No active team found, returning 404');
                 return response()->json(['error' => 'No active team found'], 404);
             }
+
+            // Log all matches for this team before filtering
+            $allMatches = \App\Models\GameMatch::where('team_id', $teamId)->get();
+            \Log::info('All matches for team_id', [
+                'team_id' => $teamId,
+                'total_matches' => $allMatches->count(),
+                'matches' => $allMatches->map(function($match) {
+                    return [
+                        'id' => $match->id,
+                        'match_date' => $match->match_date,
+                        'winner' => $match->winner,
+                        'match_type' => $match->match_type
+                    ];
+                })
+            ]);
 
             $q = \App\Models\GameMatch::query()
                 ->select(['id','team_id','match_date','winner','turtle_taken','lord_taken','notes','playstyle','match_type'])
@@ -55,6 +83,21 @@ class GameMatchController extends Controller
                 ->where('match_type', $matchType); // Filter by match type
 
             $matches = $q->orderBy('match_date', 'asc')->get();
+
+            \Log::info('Filtered matches result', [
+                'team_id' => $teamId,
+                'match_type' => $matchType,
+                'matches_count' => $matches->count(),
+                'matches' => $matches->map(function($match) {
+                    return [
+                        'id' => $match->id,
+                        'match_date' => $match->match_date,
+                        'winner' => $match->winner,
+                        'match_type' => $match->match_type,
+                        'teams_count' => $match->teams->count()
+                    ];
+                })
+            ]);
 
             return response()->json($matches);
         } catch (\Throwable $e) {
