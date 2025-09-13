@@ -325,9 +325,6 @@ class MatchPlayerAssignmentController extends Controller
                 'hero_name' => $newHeroName
             ]);
 
-            // CRITICAL: Also update the match.teams data to reflect the hero change
-            $this->updateMatchTeamsData($matchId, $playerId, $role, $newHeroName);
-
             DB::commit();
 
             Log::info('Hero assignment updated', [
@@ -359,102 +356,6 @@ class MatchPlayerAssignmentController extends Controller
             ], 500)->header('Access-Control-Allow-Origin', '*')
               ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
               ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-        }
-    }
-
-    /**
-     * Update match.teams data when hero is changed
-     */
-    private function updateMatchTeamsData($matchId, $playerId, $role, $newHeroName)
-    {
-        try {
-            // Get the player information
-            $player = \App\Models\Player::find($playerId);
-            if (!$player) {
-                \Log::warning("Player not found for ID: {$playerId}");
-                return;
-            }
-
-            // Get the match
-            $match = \App\Models\GameMatch::find($matchId);
-            if (!$match) {
-                \Log::warning("Match not found for ID: {$matchId}");
-                return;
-            }
-
-            // Get all teams for this match
-            $teams = \App\Models\MatchTeam::where('match_id', $matchId)->get();
-            
-            foreach ($teams as $team) {
-                $picks1 = $team->picks1 ?? [];
-                $picks2 = $team->picks2 ?? [];
-                $updated = false;
-
-                // Update picks1
-                foreach ($picks1 as $index => $pick) {
-                    if (is_array($pick) && isset($pick['player']) && isset($pick['lane'])) {
-                        $pickPlayerName = is_object($pick['player']) ? $pick['player']->name : $pick['player'];
-                        $pickRole = $pick['lane'] ?? '';
-                        
-                        // Normalize role names for comparison
-                        $roleMap = [
-                            'xp' => 'exp', 'exp' => 'exp', 'mid' => 'mid',
-                            'jungle' => 'jungler', 'jungler' => 'jungler',
-                            'gold' => 'gold', 'roam' => 'roam', 'roamer' => 'roam'
-                        ];
-                        $normalizedPickRole = strtolower(trim($pickRole));
-                        $canonicalPickRole = $roleMap[$normalizedPickRole] ?? $normalizedPickRole;
-                        
-                        if ($pickPlayerName === $player->name && $canonicalPickRole === $role) {
-                            $picks1[$index]['hero'] = $newHeroName;
-                            $picks1[$index]['name'] = $newHeroName;
-                            $updated = true;
-                            \Log::info("Updated picks1 for player {$player->name} in role {$role} to hero {$newHeroName}");
-                        }
-                    }
-                }
-
-                // Update picks2
-                foreach ($picks2 as $index => $pick) {
-                    if (is_array($pick) && isset($pick['player']) && isset($pick['lane'])) {
-                        $pickPlayerName = is_object($pick['player']) ? $pick['player']->name : $pick['player'];
-                        $pickRole = $pick['lane'] ?? '';
-                        
-                        // Normalize role names for comparison
-                        $roleMap = [
-                            'xp' => 'exp', 'exp' => 'exp', 'mid' => 'mid',
-                            'jungle' => 'jungler', 'jungler' => 'jungler',
-                            'gold' => 'gold', 'roam' => 'roam', 'roamer' => 'roam'
-                        ];
-                        $normalizedPickRole = strtolower(trim($pickRole));
-                        $canonicalPickRole = $roleMap[$normalizedPickRole] ?? $normalizedPickRole;
-                        
-                        if ($pickPlayerName === $player->name && $canonicalPickRole === $role) {
-                            $picks2[$index]['hero'] = $newHeroName;
-                            $picks2[$index]['name'] = $newHeroName;
-                            $updated = true;
-                            \Log::info("Updated picks2 for player {$player->name} in role {$role} to hero {$newHeroName}");
-                        }
-                    }
-                }
-
-                // Save the updated picks if any changes were made
-                if ($updated) {
-                    $team->picks1 = $picks1;
-                    $team->picks2 = $picks2;
-                    $team->save();
-                    \Log::info("Updated match.teams data for match {$matchId}, team {$team->team}");
-                }
-            }
-
-        } catch (\Exception $e) {
-            \Log::error('Error updating match.teams data', [
-                'match_id' => $matchId,
-                'player_id' => $playerId,
-                'role' => $role,
-                'new_hero_name' => $newHeroName,
-                'error' => $e->getMessage()
-            ]);
         }
     }
 }
