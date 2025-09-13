@@ -123,17 +123,35 @@ class MatchHeroSyncService
             return;
         }
 
-        // Update picks1 (first phase picks)
+        // Update picks1 (first phase picks) - ensure proper structure
         $picks1 = $team->picks1 ?? [];
         if (isset($picks1[$pickIndex])) {
-            $picks1[$pickIndex] = $newHeroName;
+            // If the pick is just a string, replace it
+            if (is_string($picks1[$pickIndex])) {
+                $picks1[$pickIndex] = $newHeroName;
+            } else {
+                // If it's an object, update the hero property
+                $picks1[$pickIndex] = array_merge($picks1[$pickIndex], [
+                    'hero' => $newHeroName,
+                    'lane' => $role
+                ]);
+            }
             $team->picks1 = $picks1;
         }
 
         // Update picks2 (second phase picks) if needed
         $picks2 = $team->picks2 ?? [];
         if (isset($picks2[$pickIndex])) {
-            $picks2[$pickIndex] = $newHeroName;
+            // If the pick is just a string, replace it
+            if (is_string($picks2[$pickIndex])) {
+                $picks2[$pickIndex] = $newHeroName;
+            } else {
+                // If it's an object, update the hero property
+                $picks2[$pickIndex] = array_merge($picks2[$pickIndex], [
+                    'hero' => $newHeroName,
+                    'lane' => $role
+                ]);
+            }
             $team->picks2 = $picks2;
         }
 
@@ -232,6 +250,9 @@ class MatchHeroSyncService
                 }
             }
 
+            // Ensure all picks have proper structure with lane information
+            $this->ensurePicksStructure($match);
+
             Log::info('Synced all heroes to match teams', [
                 'match_id' => $matchId,
                 'assignments_count' => $assignments->count()
@@ -245,6 +266,55 @@ class MatchHeroSyncService
                 'error' => $e->getMessage()
             ]);
             throw $e;
+        }
+    }
+
+    /**
+     * Ensure picks have proper structure with lane information
+     */
+    private function ensurePicksStructure($match)
+    {
+        $roles = ['exp', 'mid', 'jungler', 'gold', 'roam'];
+        
+        foreach ($match->teams as $team) {
+            $picks1 = $team->picks1 ?? [];
+            $picks2 = $team->picks2 ?? [];
+            
+            // Ensure picks1 has proper structure
+            for ($i = 0; $i < 5; $i++) {
+                if (isset($picks1[$i])) {
+                    if (is_string($picks1[$i])) {
+                        // Convert string to object with lane information
+                        $picks1[$i] = [
+                            'hero' => $picks1[$i],
+                            'lane' => $roles[$i] ?? 'unknown'
+                        ];
+                    } elseif (is_array($picks1[$i]) && !isset($picks1[$i]['lane'])) {
+                        // Add lane information if missing
+                        $picks1[$i]['lane'] = $roles[$i] ?? 'unknown';
+                    }
+                }
+            }
+            
+            // Ensure picks2 has proper structure
+            for ($i = 0; $i < 5; $i++) {
+                if (isset($picks2[$i])) {
+                    if (is_string($picks2[$i])) {
+                        // Convert string to object with lane information
+                        $picks2[$i] = [
+                            'hero' => $picks2[$i],
+                            'lane' => $roles[$i] ?? 'unknown'
+                        ];
+                    } elseif (is_array($picks2[$i]) && !isset($picks2[$i]['lane'])) {
+                        // Add lane information if missing
+                        $picks2[$i]['lane'] = $roles[$i] ?? 'unknown';
+                    }
+                }
+            }
+            
+            $team->picks1 = $picks1;
+            $team->picks2 = $picks2;
+            $team->save();
         }
     }
 }
