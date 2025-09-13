@@ -473,6 +473,7 @@ Route::get('/players/{playerName}/hero-h2h-stats-by-team', [PlayerController::cl
 Route::middleware('enable-sessions')->group(function () {
     // Matches endpoints (moved here to access session data)
     Route::apiResource('matches', GameMatchController::class);
+    Route::get('/matches-with-assignments', [GameMatchController::class, 'getMatchesWithAssignments']);
     
     Route::get('/teams', [TeamController::class, 'index']);
     Route::get('/teams/check-exists', [TeamController::class, 'checkTeamsExist']);
