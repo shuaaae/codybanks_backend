@@ -611,173 +611,179 @@ class HeroSeeder extends Seeder
                 ),
                 100 =>
                 array (
+                  'name' => 'Obsidia',
+                  'role' => 'Marksman',
+                  'image' => 'Obsidia.webp',
+                ),
+                101 =>
+                array (
                   'name' => 'Angela',
                   'role' => 'Support',
                   'image' => 'Angela.webp',
                 ),
-                101 =>
+                102 =>
                 array (
                   'name' => 'Carmilla',
                   'role' => 'Support',
                   'image' => 'Carmilla.webp',
                 ),
-                102 =>
+                103 =>
                 array (
                   'name' => 'Chip',
                   'role' => 'Support',
                   'image' => 'Chip.webp',
                 ),
-                103 =>
+                104 =>
                 array (
                   'name' => 'Diggie',
                   'role' => 'Support',
                   'image' => 'Diggie.webp',
                 ),
-                104 =>
+                105 =>
                 array (
                   'name' => 'Estes',
                   'role' => 'Support',
                   'image' => 'Estes.webp',
                 ),
-                105 =>
+                106 =>
                 array (
                   'name' => 'Faramis',
                   'role' => 'Support',
                   'image' => 'Faramis.webp',
                 ),
-                106 =>
+                107 =>
                 array (
                   'name' => 'Floryn',
                   'role' => 'Support',
                   'image' => 'Floryn.webp',
                 ),
-                107 =>
+                108 =>
                 array (
                   'name' => 'Kaja',
                   'role' => 'Support',
                   'image' => 'Kaja.webp',
                 ),
-                108 =>
+                109 =>
                 array (
                   'name' => 'Kalea',
                   'role' => 'Support',
                   'image' => 'Kalea.webp',
                 ),
-                109 =>
+                110 =>
                 array (
                   'name' => 'Lolita',
                   'role' => 'Support',
                   'image' => 'Lolita.webp',
                 ),
-                110 =>
+                111 =>
                 array (
                   'name' => 'Mathilda',
                   'role' => 'Support',
                   'image' => 'Mathilda.webp',
                 ),
-                111 =>
+                112 =>
                 array (
                   'name' => 'Rafaela',
                   'role' => 'Support',
                   'image' => 'Rafaela.webp',
                 ),
-                112 =>
+                113 =>
                 array (
                   'name' => 'Akai',
                   'role' => 'Tank',
                   'image' => 'Akai.webp',
                 ),
-                113 =>
+                114 =>
                 array (
                   'name' => 'Atlas',
                   'role' => 'Tank',
                   'image' => 'Atlas.webp',
                 ),
-                114 =>
+                115 =>
                 array (
                   'name' => 'Barats',
                   'role' => 'Tank',
                   'image' => 'Barats.webp',
                 ),
-                115 =>
+                116 =>
                 array (
                   'name' => 'Baxia',
                   'role' => 'Tank',
                   'image' => 'Baxia.webp',
                 ),
-                116 =>
+                117 =>
                 array (
                   'name' => 'Belerick',
                   'role' => 'Tank',
                   'image' => 'Belerick.webp',
                 ),
-                117 =>
+                118 =>
                 array (
                   'name' => 'Edith',
                   'role' => 'Tank',
                   'image' => 'Edith.webp',
                 ),
-                118 =>
+                119 =>
                 array (
                   'name' => 'Esmeralda',
                   'role' => 'Tank',
                   'image' => 'Esmeralda.webp',
                 ),
-                119 =>
+                120 =>
                 array (
                   'name' => 'Franco',
                   'role' => 'Tank',
                   'image' => 'Franco.webp',
                 ),
-                120 =>
+                121 =>
                 array (
                   'name' => 'Gatotkaca',
                   'role' => 'Tank',
                   'image' => 'Gatotkaca.webp',
                 ),
-                121 =>
+                122 =>
                 array (
                   'name' => 'Gloo',
                   'role' => 'Tank',
                   'image' => 'Gloo.webp',
                 ),
-                122 =>
+                123 =>
                 array (
                   'name' => 'Grock',
                   'role' => 'Tank',
                   'image' => 'Grock.webp',
                 ),
-                123 =>
+                124 =>
                 array (
                   'name' => 'Hylos',
                   'role' => 'Tank',
                   'image' => 'Hylos.webp',
                 ),
-                124 =>
+                125 =>
                 array (
                   'name' => 'Johnson',
                   'role' => 'Tank',
                   'image' => 'Johnson.webp',
                 ),
-                125 =>
+                126 =>
                 array (
                   'name' => 'Khufra',
                   'role' => 'Tank',
                   'image' => 'Khufra.webp',
                 ),
-                126 =>
+                127 =>
                 array (
                   'name' => 'Minotaur',
                   'role' => 'Tank',
                   'image' => 'Minotaur.webp',
                 ),
-                127 =>
+                128 =>
                 array (
                   'name' => 'Tigreal',
                   'role' => 'Tank',
                   'image' => 'Tigreal.webp',
                 ),
-                128 =>
+                129 =>
                 array (
                   'name' => 'Uranus',
                   'role' => 'Tank',
