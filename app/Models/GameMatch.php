@@ -18,7 +18,8 @@ class GameMatch extends Model
         'notes',
         'playstyle',
         'team_id',
-        'match_type'
+        'match_type',
+        'annual_map'
     ];
 
     // Ensure timestamps are automatically updated

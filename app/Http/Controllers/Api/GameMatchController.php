@@ -76,7 +76,7 @@ class GameMatchController extends Controller
             ]);
 
             $q = \App\Models\GameMatch::query()
-                ->select(['id','team_id','match_date','winner','turtle_taken','lord_taken','notes','playstyle','match_type'])
+                ->select(['id','team_id','match_date','winner','turtle_taken','lord_taken','notes','playstyle','match_type','annual_map'])
                 ->with([
                     'teams:id,match_id,team,team_color,banning_phase1,picks1,banning_phase2,picks2',
                 ])
@@ -138,6 +138,7 @@ class GameMatchController extends Controller
                 'lord_taken' => 'nullable|string',
                 'notes' => 'nullable|string',
                 'playstyle' => 'nullable|string',
+                'annual_map' => 'nullable|string',
                 'team_id' => 'nullable|exists:teams,id', // Allow team_id in request
                 'match_type' => 'nullable|in:scrim,tournament',
                 'teams' => 'required|array|size:2',
@@ -160,6 +161,7 @@ class GameMatchController extends Controller
                 'lord_taken' => $validated['lord_taken'] ?? null,
                 'notes' => $validated['notes'] ?? null,
                 'playstyle' => $validated['playstyle'] ?? null,
+                'annual_map' => $validated['annual_map'] ?? null,
                 'match_type' => $validated['match_type'] ?? 'scrim',
                 'team_id' => $teamId, // Use the determined team_id
             ]);
@@ -322,6 +324,7 @@ class GameMatchController extends Controller
             'lord_taken'   => ['nullable','string'],
             'notes'        => ['nullable','string'],
             'playstyle'    => ['nullable','string'],
+            'annual_map'   => ['nullable','string'],
             // teams payload is required for editing in this app
             'teams'                    => ['required','array','size:2'],
             'teams.*.team'             => ['required','string'],
@@ -357,6 +360,7 @@ class GameMatchController extends Controller
                 'lord_taken'   => $validated['lord_taken'] ?? null,
                 'notes'        => $validated['notes'] ?? null,
                 'playstyle'    => $validated['playstyle'] ?? null,
+                'annual_map'   => $validated['annual_map'] ?? null,
             ]);
 
             // Recreate children
