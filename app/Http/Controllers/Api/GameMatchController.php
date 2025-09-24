@@ -83,7 +83,7 @@ class GameMatchController extends Controller
                 ->where('team_id', $teamId) // Always filter by team ID
                 ->where('match_type', $matchType); // Filter by match type
 
-            $matches = $q->orderBy('match_date', 'asc')->get();
+            $matches = $q->orderBy('match_date', 'desc')->get();
 
             \Log::info('Filtered matches result', [
                 'team_id' => $teamId,
