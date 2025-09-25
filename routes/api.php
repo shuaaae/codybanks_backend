@@ -94,6 +94,45 @@ Route::get('/user-photo/{filename}', function ($filename) {
     }
 });
 
+// Player photo route to serve images from local storage
+Route::get('/player-photo/{filename}', function ($filename) {
+    try {
+        // URL decode the filename to handle spaces and special characters
+        $decodedFilename = urldecode($filename);
+        
+        // Build the local file path
+        $imagePath = public_path("players/{$decodedFilename}");
+        
+        // Check if the file exists
+        if (!file_exists($imagePath)) {
+            \Log::warning("Player photo not found: {$imagePath}");
+            return response()->json(['error' => 'Image not found'], 404);
+        }
+        
+        // Get the image info
+        $imageInfo = @getimagesize($imagePath);
+        $mimeType = $imageInfo['mime'] ?? 'image/jpeg';
+        
+        // Return the image with optimized headers
+        return response()->file($imagePath, [
+            'Content-Type' => $mimeType,
+            'Access-Control-Allow-Origin' => '*',
+            'Access-Control-Allow-Methods' => 'GET',
+            'Access-Control-Allow-Headers' => 'Content-Type',
+            'Cache-Control' => 'public, max-age=86400, immutable', // Cache for 24 hours
+            'ETag' => md5_file($imagePath), // Enable ETag for better caching
+            'Last-Modified' => gmdate('D, d M Y H:i:s', filemtime($imagePath)) . ' GMT'
+        ]);
+    } catch (\Exception $e) {
+        // Log the error for debugging but don't expose it to client
+        \Log::error("Player photo error: " . $e->getMessage(), [
+            'filename' => $filename,
+            'path' => $imagePath ?? 'unknown'
+        ]);
+        return response()->json(['error' => 'Failed to load image'], 500);
+    }
+});
+
 // Team logo route to serve images from storage
 Route::get('/team-logo/{filename}', function ($filename) {
     try {
