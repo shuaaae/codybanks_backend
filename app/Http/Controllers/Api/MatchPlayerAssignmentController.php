@@ -600,7 +600,7 @@ class MatchPlayerAssignmentController extends Controller
             $teamId = $request->input('team_id');
             $matchType = $request->input('match_type', 'scrim');
 
-            // Get all team players first
+            // Get all team players first to ensure all players are included
             $teamPlayers = Player::where('team_id', $teamId)->get();
             $allPlayerNames = $teamPlayers->pluck('name')->toArray();
 
