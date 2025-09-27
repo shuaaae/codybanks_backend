@@ -607,7 +607,7 @@ class MatchPlayerAssignmentController extends Controller
             // Get all matches for this team and match type
             $matches = GameMatch::where('team_id', $teamId)
                 ->where('match_type', $matchType)
-                ->with(['playerAssignments.player'])
+                ->with(['playerAssignments.player', 'teams'])
                 ->get();
 
             $playerStats = [];
@@ -615,6 +615,8 @@ class MatchPlayerAssignmentController extends Controller
             foreach ($matches as $match) {
                 $isWinningTeam = $match->winner === 'win';
                 
+                // First, try to get data from MatchPlayerAssignment records
+                $hasAssignments = false;
                 foreach ($match->playerAssignments as $assignment) {
                     $playerName = $assignment->player->name;
                     $heroName = $assignment->hero_name;
@@ -622,6 +624,7 @@ class MatchPlayerAssignmentController extends Controller
                     
                     if (!$heroName) continue;
                     
+                    $hasAssignments = true;
                     $key = "{$playerName}_{$heroName}_{$role}";
                     
                     if (!isset($playerStats[$key])) {
@@ -632,7 +635,8 @@ class MatchPlayerAssignmentController extends Controller
                             'games_played' => 0,
                             'wins' => 0,
                             'losses' => 0,
-                            'win_rate' => 0.00
+                            'win_rate' => 0.00,
+                            'is_edited' => true // This comes from MatchPlayerAssignment, so it's edited
                         ];
                     }
                     
@@ -644,6 +648,50 @@ class MatchPlayerAssignmentController extends Controller
                     }
                     
                     $playerStats[$key]['win_rate'] = $playerStats[$key]['wins'] / $playerStats[$key]['games_played'];
+                }
+                
+                // If no MatchPlayerAssignment records, fall back to match data structure
+                if (!$hasAssignments) {
+                    foreach ($match->teams as $team) {
+                        if ($team->team_id == $teamId) {
+                            $allPicks = array_merge($team->picks1 ?? [], $team->picks2 ?? []);
+                            
+                            foreach ($allPicks as $pick) {
+                                if (is_array($pick) && isset($pick['player']) && isset($pick['hero'])) {
+                                    $playerName = $pick['player']['name'] ?? $pick['player'];
+                                    $heroName = $pick['hero']['name'] ?? $pick['hero'];
+                                    $role = $pick['lane'] ?? 'unknown';
+                                    
+                                    if (!$playerName || !$heroName) continue;
+                                    
+                                    $key = "{$playerName}_{$heroName}_{$role}";
+                                    
+                                    if (!isset($playerStats[$key])) {
+                                        $playerStats[$key] = [
+                                            'player_name' => $playerName,
+                                            'hero_name' => $heroName,
+                                            'role' => $role,
+                                            'games_played' => 0,
+                                            'wins' => 0,
+                                            'losses' => 0,
+                                            'win_rate' => 0.00,
+                                            'is_edited' => false // This comes from match data, so it's not edited
+                                        ];
+                                    }
+                                    
+                                    $playerStats[$key]['games_played']++;
+                                    if ($isWinningTeam) {
+                                        $playerStats[$key]['wins']++;
+                                    } else {
+                                        $playerStats[$key]['losses']++;
+                                    }
+                                    
+                                    $playerStats[$key]['win_rate'] = $playerStats[$key]['wins'] / $playerStats[$key]['games_played'];
+                                }
+                            }
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -702,64 +750,111 @@ class MatchPlayerAssignmentController extends Controller
             // Get all player assignments for this match
             $assignments = $match->playerAssignments;
             
-            // Group assignments by role for H2H matching
-            $assignmentsByRole = [];
-            foreach ($assignments as $assignment) {
-                $role = $assignment->role;
-                if (!isset($assignmentsByRole[$role])) {
-                    $assignmentsByRole[$role] = [];
+            // If we have assignments, use them for H2H calculation
+            if ($assignments->count() > 0) {
+                // Group assignments by role for H2H matching
+                $assignmentsByRole = [];
+                foreach ($assignments as $assignment) {
+                    $role = $assignment->role;
+                    if (!isset($assignmentsByRole[$role])) {
+                        $assignmentsByRole[$role] = [];
+                    }
+                    $assignmentsByRole[$role][] = $assignment;
                 }
-                $assignmentsByRole[$role][] = $assignment;
-            }
-            
-            // Calculate H2H for each role
-            foreach ($assignmentsByRole as $role => $roleAssignments) {
-                if (count($roleAssignments) >= 2) {
-                    // Find our team's player and enemy team's player in the same role
-                    $ourPlayer = null;
-                    $enemyPlayer = null;
-                    
-                    foreach ($roleAssignments as $assignment) {
-                        if ($assignment->player->team_id == $match->team_id) {
-                            $ourPlayer = $assignment;
-                        } else {
-                            $enemyPlayer = $assignment;
+                
+                // Calculate H2H for each role
+                foreach ($assignmentsByRole as $role => $roleAssignments) {
+                    if (count($roleAssignments) >= 2) {
+                        // Find our team's player and enemy team's player in the same role
+                        $ourPlayer = null;
+                        $enemyPlayer = null;
+                        
+                        foreach ($roleAssignments as $assignment) {
+                            if ($assignment->player->team_id == $match->team_id) {
+                                $ourPlayer = $assignment;
+                            } else {
+                                $enemyPlayer = $assignment;
+                            }
+                        }
+                        
+                        if ($ourPlayer && $enemyPlayer) {
+                            $ourPlayerName = $ourPlayer->player->name;
+                            $enemyPlayerName = $enemyPlayer->player->name;
+                            $ourHero = $ourPlayer->hero_name;
+                            $enemyHero = $enemyPlayer->hero_name;
+                            
+                            if ($ourHero && $enemyHero) {
+                                $h2hKey = "{$ourPlayerName}_{$enemyPlayerName}_{$ourHero}_{$enemyHero}";
+                                
+                                if (!isset($h2hStats[$ourPlayerName][$h2hKey])) {
+                                    $h2hStats[$ourPlayerName][$h2hKey] = [
+                                        'our_player' => $ourPlayerName,
+                                        'enemy_player' => $enemyPlayerName,
+                                        'our_hero' => $ourHero,
+                                        'enemy_hero' => $enemyHero,
+                                        'our_wins' => 0,
+                                        'enemy_wins' => 0,
+                                        'total_matches' => 0,
+                                        'win_rate' => 0.00
+                                    ];
+                                }
+                                
+                                $h2hStats[$ourPlayerName][$h2hKey]['total_matches']++;
+                                if ($isWinningTeam) {
+                                    $h2hStats[$ourPlayerName][$h2hKey]['our_wins']++;
+                                } else {
+                                    $h2hStats[$ourPlayerName][$h2hKey]['enemy_wins']++;
+                                }
+                                
+                                $h2hStats[$ourPlayerName][$h2hKey]['win_rate'] = 
+                                    $h2hStats[$ourPlayerName][$h2hKey]['our_wins'] / 
+                                    $h2hStats[$ourPlayerName][$h2hKey]['total_matches'];
+                            }
                         }
                     }
-                    
-                    if ($ourPlayer && $enemyPlayer) {
-                        $ourPlayerName = $ourPlayer->player->name;
-                        $enemyPlayerName = $enemyPlayer->player->name;
-                        $ourHero = $ourPlayer->hero_name;
-                        $enemyHero = $enemyPlayer->hero_name;
+                }
+            } else {
+                // Fallback to match data structure for H2H calculation
+                foreach ($match->teams as $team) {
+                    if ($team->team_id == $match->team_id) {
+                        $allPicks = array_merge($team->picks1 ?? [], $team->picks2 ?? []);
                         
-                        if ($ourHero && $enemyHero) {
-                            $h2hKey = "{$ourPlayerName}_{$enemyPlayerName}_{$ourHero}_{$enemyHero}";
-                            
-                            if (!isset($h2hStats[$ourPlayerName][$h2hKey])) {
-                                $h2hStats[$ourPlayerName][$h2hKey] = [
-                                    'our_player' => $ourPlayerName,
-                                    'enemy_player' => $enemyPlayerName,
-                                    'our_hero' => $ourHero,
-                                    'enemy_hero' => $enemyHero,
-                                    'our_wins' => 0,
-                                    'enemy_wins' => 0,
-                                    'total_matches' => 0,
-                                    'win_rate' => 0.00
-                                ];
+                        foreach ($allPicks as $pick) {
+                            if (is_array($pick) && isset($pick['player']) && isset($pick['hero'])) {
+                                $playerName = $pick['player']['name'] ?? $pick['player'];
+                                $heroName = $pick['hero']['name'] ?? $pick['hero'];
+                                
+                                if ($playerName && $heroName) {
+                                    // For H2H, we'll create a simple matchup
+                                    $h2hKey = "{$playerName}_vs_enemy_{$heroName}";
+                                    
+                                    if (!isset($h2hStats[$playerName][$h2hKey])) {
+                                        $h2hStats[$playerName][$h2hKey] = [
+                                            'our_player' => $playerName,
+                                            'enemy_player' => 'Enemy',
+                                            'our_hero' => $heroName,
+                                            'enemy_hero' => 'Unknown',
+                                            'our_wins' => 0,
+                                            'enemy_wins' => 0,
+                                            'total_matches' => 0,
+                                            'win_rate' => 0.00
+                                        ];
+                                    }
+                                    
+                                    $h2hStats[$playerName][$h2hKey]['total_matches']++;
+                                    if ($isWinningTeam) {
+                                        $h2hStats[$playerName][$h2hKey]['our_wins']++;
+                                    } else {
+                                        $h2hStats[$playerName][$h2hKey]['enemy_wins']++;
+                                    }
+                                    
+                                    $h2hStats[$playerName][$h2hKey]['win_rate'] = 
+                                        $h2hStats[$playerName][$h2hKey]['our_wins'] / 
+                                        $h2hStats[$playerName][$h2hKey]['total_matches'];
+                                }
                             }
-                            
-                            $h2hStats[$ourPlayerName][$h2hKey]['total_matches']++;
-                            if ($isWinningTeam) {
-                                $h2hStats[$ourPlayerName][$h2hKey]['our_wins']++;
-                            } else {
-                                $h2hStats[$ourPlayerName][$h2hKey]['enemy_wins']++;
-                            }
-                            
-                            $h2hStats[$ourPlayerName][$h2hKey]['win_rate'] = 
-                                $h2hStats[$ourPlayerName][$h2hKey]['our_wins'] / 
-                                $h2hStats[$ourPlayerName][$h2hKey]['total_matches'];
                         }
+                        break;
                     }
                 }
             }
