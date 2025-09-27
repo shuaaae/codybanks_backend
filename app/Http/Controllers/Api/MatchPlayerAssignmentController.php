@@ -587,6 +587,95 @@ class MatchPlayerAssignmentController extends Controller
     }
 
     /**
+     * Get player statistics based on match assignments
+     */
+    public function getPlayerStatistics(Request $request): JsonResponse
+    {
+        $request->validate([
+            'team_id' => 'required|exists:teams,id',
+            'match_type' => 'nullable|string|in:scrim,tournament'
+        ]);
+
+        try {
+            $teamId = $request->input('team_id');
+            $matchType = $request->input('match_type', 'scrim');
+
+            // Get all matches for this team and match type
+            $matches = GameMatch::where('team_id', $teamId)
+                ->where('match_type', $matchType)
+                ->with(['playerAssignments.player'])
+                ->get();
+
+            $playerStats = [];
+
+            foreach ($matches as $match) {
+                $isWinningTeam = $match->winner === 'win';
+                
+                foreach ($match->playerAssignments as $assignment) {
+                    $playerName = $assignment->player->name;
+                    $heroName = $assignment->hero_name;
+                    $role = $assignment->role;
+                    
+                    if (!$heroName) continue;
+                    
+                    $key = "{$playerName}_{$heroName}_{$role}";
+                    
+                    if (!isset($playerStats[$key])) {
+                        $playerStats[$key] = [
+                            'player_name' => $playerName,
+                            'hero_name' => $heroName,
+                            'role' => $role,
+                            'games_played' => 0,
+                            'wins' => 0,
+                            'losses' => 0,
+                            'win_rate' => 0.00
+                        ];
+                    }
+                    
+                    $playerStats[$key]['games_played']++;
+                    if ($isWinningTeam) {
+                        $playerStats[$key]['wins']++;
+                    } else {
+                        $playerStats[$key]['losses']++;
+                    }
+                    
+                    $playerStats[$key]['win_rate'] = $playerStats[$key]['wins'] / $playerStats[$key]['games_played'];
+                }
+            }
+
+            // Group by player name
+            $groupedStats = [];
+            foreach ($playerStats as $key => $stats) {
+                $playerName = $stats['player_name'];
+                if (!isset($groupedStats[$playerName])) {
+                    $groupedStats[$playerName] = [];
+                }
+                $groupedStats[$playerName][] = $stats;
+            }
+
+            return response()->json([
+                'player_statistics' => $groupedStats,
+                'total_matches' => $matches->count()
+            ])->header('Access-Control-Allow-Origin', '*')
+              ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+              ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+
+        } catch (\Exception $e) {
+            Log::error('Error getting player statistics', [
+                'team_id' => $request->input('team_id'),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to get player statistics',
+                'message' => $e->getMessage()
+            ], 500)->header('Access-Control-Allow-Origin', '*')
+              ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+              ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+        }
+    }
+
+    /**
      * Update player statistics when role changes
      */
     private function updatePlayerStatsForRoleChange($matchId, $playerId, $oldRole, $newRole, $newHeroName, $oldHeroName)

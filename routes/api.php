@@ -644,3 +644,6 @@ Route::options('/match-player-assignments/swap-lanes', function () {
         ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 });
 Route::put('/match-player-assignments/swap-lanes', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'swapLaneAssignments']);
+
+// Get player statistics based on match assignments
+Route::get('/match-player-assignments/player-statistics', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'getPlayerStatistics']);
