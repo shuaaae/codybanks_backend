@@ -656,14 +656,46 @@ class MatchPlayerAssignmentController extends Controller
                         if ($team->team_id == $teamId) {
                             $allPicks = array_merge($team->picks1 ?? [], $team->picks2 ?? []);
                             
-                            foreach ($allPicks as $pick) {
-                                if (is_array($pick) && isset($pick['player']) && isset($pick['hero'])) {
-                                    $playerName = $pick['player']['name'] ?? $pick['player'];
-                                    $heroName = $pick['hero']['name'] ?? $pick['hero'];
-                                    $role = $pick['lane'] ?? 'unknown';
-                                    
-                                    if (!$playerName || !$heroName) continue;
-                                    
+                            Log::info('Processing match data for team', [
+                                'match_id' => $match->id,
+                                'team_id' => $teamId,
+                                'picks1' => $team->picks1,
+                                'picks2' => $team->picks2,
+                                'all_picks' => $allPicks
+                            ]);
+                            
+                            foreach ($allPicks as $index => $pick) {
+                                Log::info('Processing pick', [
+                                    'index' => $index,
+                                    'pick' => $pick,
+                                    'is_array' => is_array($pick)
+                                ]);
+                                
+                                // Handle different pick formats
+                                $playerName = null;
+                                $heroName = null;
+                                $role = 'unknown';
+                                
+                                if (is_array($pick)) {
+                                    // Format: {'player': {'name': 'PlayerName'}, 'hero': {'name': 'HeroName'}, 'lane': 'role'}
+                                    if (isset($pick['player']) && isset($pick['hero'])) {
+                                        $playerName = $pick['player']['name'] ?? $pick['player'];
+                                        $heroName = $pick['hero']['name'] ?? $pick['hero'];
+                                        $role = $pick['lane'] ?? 'unknown';
+                                    }
+                                    // Format: {'name': 'PlayerName', 'hero': 'HeroName', 'lane': 'role'}
+                                    elseif (isset($pick['name']) && isset($pick['hero'])) {
+                                        $playerName = $pick['name'];
+                                        $heroName = $pick['hero'];
+                                        $role = $pick['lane'] ?? 'unknown';
+                                    }
+                                } elseif (is_string($pick)) {
+                                    // Format: Just hero name as string
+                                    $heroName = $pick;
+                                    $playerName = "Player_" . ($index + 1); // Fallback player name
+                                }
+                                
+                                if ($playerName && $heroName) {
                                     $key = "{$playerName}_{$heroName}_{$role}";
                                     
                                     if (!isset($playerStats[$key])) {
@@ -687,6 +719,15 @@ class MatchPlayerAssignmentController extends Controller
                                     }
                                     
                                     $playerStats[$key]['win_rate'] = $playerStats[$key]['wins'] / $playerStats[$key]['games_played'];
+                                    
+                                    Log::info('Added player stat', [
+                                        'player_name' => $playerName,
+                                        'hero_name' => $heroName,
+                                        'role' => $role,
+                                        'games_played' => $playerStats[$key]['games_played'],
+                                        'wins' => $playerStats[$key]['wins'],
+                                        'losses' => $playerStats[$key]['losses']
+                                    ]);
                                 }
                             }
                             break;
@@ -819,39 +860,54 @@ class MatchPlayerAssignmentController extends Controller
                     if ($team->team_id == $match->team_id) {
                         $allPicks = array_merge($team->picks1 ?? [], $team->picks2 ?? []);
                         
-                        foreach ($allPicks as $pick) {
-                            if (is_array($pick) && isset($pick['player']) && isset($pick['hero'])) {
-                                $playerName = $pick['player']['name'] ?? $pick['player'];
-                                $heroName = $pick['hero']['name'] ?? $pick['hero'];
-                                
-                                if ($playerName && $heroName) {
-                                    // For H2H, we'll create a simple matchup
-                                    $h2hKey = "{$playerName}_vs_enemy_{$heroName}";
-                                    
-                                    if (!isset($h2hStats[$playerName][$h2hKey])) {
-                                        $h2hStats[$playerName][$h2hKey] = [
-                                            'our_player' => $playerName,
-                                            'enemy_player' => 'Enemy',
-                                            'our_hero' => $heroName,
-                                            'enemy_hero' => 'Unknown',
-                                            'our_wins' => 0,
-                                            'enemy_wins' => 0,
-                                            'total_matches' => 0,
-                                            'win_rate' => 0.00
-                                        ];
-                                    }
-                                    
-                                    $h2hStats[$playerName][$h2hKey]['total_matches']++;
-                                    if ($isWinningTeam) {
-                                        $h2hStats[$playerName][$h2hKey]['our_wins']++;
-                                    } else {
-                                        $h2hStats[$playerName][$h2hKey]['enemy_wins']++;
-                                    }
-                                    
-                                    $h2hStats[$playerName][$h2hKey]['win_rate'] = 
-                                        $h2hStats[$playerName][$h2hKey]['our_wins'] / 
-                                        $h2hStats[$playerName][$h2hKey]['total_matches'];
+                        foreach ($allPicks as $index => $pick) {
+                            $playerName = null;
+                            $heroName = null;
+                            
+                            if (is_array($pick)) {
+                                // Format: {'player': {'name': 'PlayerName'}, 'hero': {'name': 'HeroName'}}
+                                if (isset($pick['player']) && isset($pick['hero'])) {
+                                    $playerName = $pick['player']['name'] ?? $pick['player'];
+                                    $heroName = $pick['hero']['name'] ?? $pick['hero'];
                                 }
+                                // Format: {'name': 'PlayerName', 'hero': 'HeroName'}
+                                elseif (isset($pick['name']) && isset($pick['hero'])) {
+                                    $playerName = $pick['name'];
+                                    $heroName = $pick['hero'];
+                                }
+                            } elseif (is_string($pick)) {
+                                // Format: Just hero name as string
+                                $heroName = $pick;
+                                $playerName = "Player_" . ($index + 1); // Fallback player name
+                            }
+                            
+                            if ($playerName && $heroName) {
+                                // For H2H, we'll create a simple matchup
+                                $h2hKey = "{$playerName}_vs_enemy_{$heroName}";
+                                
+                                if (!isset($h2hStats[$playerName][$h2hKey])) {
+                                    $h2hStats[$playerName][$h2hKey] = [
+                                        'our_player' => $playerName,
+                                        'enemy_player' => 'Enemy',
+                                        'our_hero' => $heroName,
+                                        'enemy_hero' => 'Unknown',
+                                        'our_wins' => 0,
+                                        'enemy_wins' => 0,
+                                        'total_matches' => 0,
+                                        'win_rate' => 0.00
+                                    ];
+                                }
+                                
+                                $h2hStats[$playerName][$h2hKey]['total_matches']++;
+                                if ($isWinningTeam) {
+                                    $h2hStats[$playerName][$h2hKey]['our_wins']++;
+                                } else {
+                                    $h2hStats[$playerName][$h2hKey]['enemy_wins']++;
+                                }
+                                
+                                $h2hStats[$playerName][$h2hKey]['win_rate'] = 
+                                    $h2hStats[$playerName][$h2hKey]['our_wins'] / 
+                                    $h2hStats[$playerName][$h2hKey]['total_matches'];
                             }
                         }
                         break;
