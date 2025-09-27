@@ -397,6 +397,7 @@ class MatchPlayerAssignmentController extends Controller
             $oldHeroName = $assignment->hero_name;
 
             // Check if there's already an assignment for the new role (by a different player)
+            // But allow swaps - if the other player is moving to our old role, it's a valid swap
             $existingNewRoleAssignment = MatchPlayerAssignment::where('match_id', $matchId)
                 ->where('role', $newRole)
                 ->where('player_id', '!=', $playerId) // Different player
@@ -406,9 +407,20 @@ class MatchPlayerAssignmentController extends Controller
                 ->first();
 
             if ($existingNewRoleAssignment) {
-                return response()->json([
-                    'error' => 'Another player is already assigned to the ' . $newRole . ' role in this match'
-                ], 400);
+                // Check if this is a valid swap (the other player is moving to our old role)
+                $isValidSwap = MatchPlayerAssignment::where('match_id', $matchId)
+                    ->where('player_id', $existingNewRoleAssignment->player_id)
+                    ->where('role', $oldRole)
+                    ->whereHas('player', function($query) use ($teamId) {
+                        $query->where('team_id', $teamId);
+                    })
+                    ->exists();
+
+                if (!$isValidSwap) {
+                    return response()->json([
+                        'error' => 'Another player is already assigned to the ' . $newRole . ' role in this match'
+                    ], 400);
+                }
             }
 
             // Update the assignment with new role and hero
@@ -451,6 +463,121 @@ class MatchPlayerAssignmentController extends Controller
 
             return response()->json([
                 'error' => 'Failed to update lane assignment',
+                'message' => $e->getMessage()
+            ], 500)->header('Access-Control-Allow-Origin', '*')
+              ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+              ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+        }
+    }
+
+    /**
+     * Swap lane assignments between two players
+     */
+    public function swapLaneAssignments(Request $request): JsonResponse
+    {
+        $request->validate([
+            'match_id' => 'required|exists:matches,id',
+            'team_id' => 'required|exists:teams,id',
+            'player1_id' => 'required|exists:players,id',
+            'player2_id' => 'required|exists:players,id',
+            'player1_new_role' => 'required|in:exp,mid,jungler,gold,roam',
+            'player2_new_role' => 'required|in:exp,mid,jungler,gold,roam',
+            'player1_hero_name' => 'nullable|string|max:255',
+            'player2_hero_name' => 'nullable|string|max:255'
+        ]);
+
+        try {
+            $matchId = $request->input('match_id');
+            $teamId = $request->input('team_id');
+            $player1Id = $request->input('player1_id');
+            $player2Id = $request->input('player2_id');
+            $player1NewRole = $request->input('player1_new_role');
+            $player2NewRole = $request->input('player2_new_role');
+            $player1HeroName = $request->input('player1_hero_name');
+            $player2HeroName = $request->input('player2_hero_name');
+
+            DB::beginTransaction();
+
+            // Get both assignments
+            $assignment1 = MatchPlayerAssignment::where('match_id', $matchId)
+                ->where('player_id', $player1Id)
+                ->whereHas('player', function($query) use ($teamId) {
+                    $query->where('team_id', $teamId);
+                })
+                ->first();
+
+            $assignment2 = MatchPlayerAssignment::where('match_id', $matchId)
+                ->where('player_id', $player2Id)
+                ->whereHas('player', function($query) use ($teamId) {
+                    $query->where('team_id', $teamId);
+                })
+                ->first();
+
+            if (!$assignment1 || !$assignment2) {
+                return response()->json([
+                    'error' => 'One or both player assignments not found'
+                ], 404);
+            }
+
+            // Store old roles and heroes for statistics update
+            $player1OldRole = $assignment1->role;
+            $player1OldHero = $assignment1->hero_name;
+            $player2OldRole = $assignment2->role;
+            $player2OldHero = $assignment2->hero_name;
+
+            // Update both assignments simultaneously
+            $assignment1->update([
+                'role' => $player1NewRole,
+                'hero_name' => $player1HeroName ?? $assignment1->hero_name
+            ]);
+
+            $assignment2->update([
+                'role' => $player2NewRole,
+                'hero_name' => $player2HeroName ?? $assignment2->hero_name
+            ]);
+
+            // Update player statistics for both players
+            $this->updatePlayerStatsForRoleChange($matchId, $player1Id, $player1OldRole, $player1NewRole, $player1HeroName ?? $assignment1->hero_name, $player1OldHero);
+            $this->updatePlayerStatsForRoleChange($matchId, $player2Id, $player2OldRole, $player2NewRole, $player2HeroName ?? $assignment2->hero_name, $player2OldHero);
+
+            // Sync with match teams data
+            $syncService = new MatchHeroSyncService();
+            $syncService->syncAllHeroesToMatchTeams($matchId);
+
+            DB::commit();
+
+            Log::info('Lane assignments swapped successfully', [
+                'match_id' => $matchId,
+                'player1_id' => $player1Id,
+                'player2_id' => $player2Id,
+                'player1_old_role' => $player1OldRole,
+                'player1_new_role' => $player1NewRole,
+                'player2_old_role' => $player2OldRole,
+                'player2_new_role' => $player2NewRole
+            ]);
+
+            return response()->json([
+                'message' => 'Lane assignments swapped successfully',
+                'assignments' => [
+                    'player1' => $assignment1->fresh(),
+                    'player2' => $assignment2->fresh()
+                ]
+            ])->header('Access-Control-Allow-Origin', '*')
+              ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+              ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Error swapping lane assignments', [
+                'match_id' => $request->input('match_id'),
+                'player1_id' => $request->input('player1_id'),
+                'player2_id' => $request->input('player2_id'),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to swap lane assignments',
                 'message' => $e->getMessage()
             ], 500)->header('Access-Control-Allow-Origin', '*')
               ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')

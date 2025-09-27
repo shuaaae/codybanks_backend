@@ -635,3 +635,12 @@ Route::options('/match-player-assignments/update-lane', function () {
 });
 
 Route::put('/match-player-assignments/update-lane', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'updateLaneAssignment']);
+
+// Lane swap route for handling simultaneous swaps
+Route::options('/match-player-assignments/swap-lanes', function () {
+    return response('', 200)
+        ->header('Access-Control-Allow-Origin', '*')
+        ->header('Access-Control-Allow-Methods', 'PUT, OPTIONS')
+        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+});
+Route::put('/match-player-assignments/swap-lanes', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'swapLaneAssignments']);
