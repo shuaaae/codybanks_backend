@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\GameMatch;
 use App\Models\MatchPlayerAssignment;
 use App\Models\Player;
+use App\Models\PlayerStat;
 use App\Models\Team;
 use App\Services\MatchHeroSyncService;
 use Illuminate\Http\Request;
