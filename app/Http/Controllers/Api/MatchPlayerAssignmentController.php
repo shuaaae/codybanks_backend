@@ -634,12 +634,21 @@ class MatchPlayerAssignmentController extends Controller
                     ];
                 }
                 
-                // Then, get non-edited players from original match data
-                foreach ($match->teams as $team) {
-                    if ($team->team_id == $teamId) {
-                        $allPicks = array_merge($team->picks1 ?? [], $team->picks2 ?? []);
-                        
-                        foreach ($allPicks as $index => $pick) {
+            // Then, get non-edited players from original match data
+            foreach ($match->teams as $team) {
+                if ($team->team_id == $teamId) {
+                    $allPicks = array_merge($team->picks1 ?? [], $team->picks2 ?? []);
+                    
+                    Log::info('Processing fresh match data', [
+                        'match_id' => $match->id,
+                        'team_id' => $teamId,
+                        'picks1' => $team->picks1,
+                        'picks2' => $team->picks2,
+                        'all_picks' => $allPicks,
+                        'has_assignments' => $match->playerAssignments->count() > 0
+                    ]);
+                    
+                    foreach ($allPicks as $index => $pick) {
                             $playerName = null;
                             $heroName = null;
                             $role = 'unknown';
@@ -727,7 +736,8 @@ class MatchPlayerAssignmentController extends Controller
                 'total_matches' => $matches->count(),
                 'player_statistics_keys' => array_keys($groupedStats),
                 'player_statistics' => $groupedStats,
-                'h2h_statistics_keys' => array_keys($h2hStats)
+                'h2h_statistics_keys' => array_keys($h2hStats),
+                'sample_player_stats' => array_slice($groupedStats, 0, 2, true)
             ]);
 
             return response()->json([
@@ -820,6 +830,13 @@ class MatchPlayerAssignmentController extends Controller
                                 'role' => $role,
                                 'is_edited' => false
                             ];
+                            
+                            Log::info('Added fresh match player', [
+                                'player_name' => $playerName,
+                                'hero_name' => $heroName,
+                                'role' => $role,
+                                'is_edited' => false
+                            ]);
                         }
                     }
                     break;
