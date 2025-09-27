@@ -378,24 +378,28 @@ class MatchPlayerAssignmentController extends Controller
 
             DB::beginTransaction();
 
-            // Find the old assignment
-            $oldAssignment = MatchPlayerAssignment::where('match_id', $matchId)
+            // Find the assignment for this player in this match (regardless of current role)
+            $assignment = MatchPlayerAssignment::where('match_id', $matchId)
                 ->where('player_id', $playerId)
-                ->where('role', $oldRole)
                 ->whereHas('player', function($query) use ($teamId) {
                     $query->where('team_id', $teamId);
                 })
                 ->first();
 
-            if (!$oldAssignment) {
+            if (!$assignment) {
                 return response()->json([
-                    'error' => 'Player assignment not found for the specified role'
+                    'error' => 'Player assignment not found for this match'
                 ], 404);
             }
 
-            // Check if there's already an assignment for the new role
+            // Store the old role and hero for statistics update
+            $oldRole = $assignment->role;
+            $oldHeroName = $assignment->hero_name;
+
+            // Check if there's already an assignment for the new role (by a different player)
             $existingNewRoleAssignment = MatchPlayerAssignment::where('match_id', $matchId)
                 ->where('role', $newRole)
+                ->where('player_id', '!=', $playerId) // Different player
                 ->whereHas('player', function($query) use ($teamId) {
                     $query->where('team_id', $teamId);
                 })
@@ -408,13 +412,13 @@ class MatchPlayerAssignmentController extends Controller
             }
 
             // Update the assignment with new role and hero
-            $oldAssignment->update([
+            $assignment->update([
                 'role' => $newRole,
-                'hero_name' => $heroName ?? $oldAssignment->hero_name
+                'hero_name' => $heroName ?? $assignment->hero_name
             ]);
 
             // Update player statistics to reflect the role change
-            $this->updatePlayerStatsForRoleChange($matchId, $playerId, $oldRole, $newRole, $heroName);
+            $this->updatePlayerStatsForRoleChange($matchId, $playerId, $oldRole, $newRole, $heroName ?? $assignment->hero_name, $oldHeroName);
 
             // Sync with match teams data
             $syncService = new MatchHeroSyncService();
@@ -457,32 +461,69 @@ class MatchPlayerAssignmentController extends Controller
     /**
      * Update player statistics when role changes
      */
-    private function updatePlayerStatsForRoleChange($matchId, $playerId, $oldRole, $newRole, $heroName)
+    private function updatePlayerStatsForRoleChange($matchId, $playerId, $oldRole, $newRole, $newHeroName, $oldHeroName)
     {
         try {
             // Get the match to determine winner
             $match = GameMatch::find($matchId);
             if (!$match) {
+                Log::error('Match not found for role change', ['match_id' => $matchId]);
                 return;
             }
 
             // Get the player
             $player = Player::find($playerId);
             if (!$player) {
+                Log::error('Player not found for role change', ['player_id' => $playerId]);
                 return;
             }
 
-            // Update player stats for the new role/hero combination
-            $playerStat = PlayerStat::where('team_id', $player->team_id)
+            // If we have an old hero name, remove stats for the old hero/role combination
+            if ($oldHeroName) {
+                $oldPlayerStat = PlayerStat::where('team_id', $player->team_id)
+                    ->where('player_name', $player->name)
+                    ->where('hero_name', $oldHeroName)
+                    ->first();
+
+                if ($oldPlayerStat) {
+                    // Decrement the old stats
+                    $oldPlayerStat->decrement('games_played');
+                    if ($match->winner === 'win') {
+                        $oldPlayerStat->decrement('wins');
+                    } else {
+                        $oldPlayerStat->decrement('losses');
+                    }
+
+                    // Recalculate win rate for old stats
+                    if ($oldPlayerStat->games_played > 0) {
+                        $oldPlayerStat->win_rate = $oldPlayerStat->wins / $oldPlayerStat->games_played;
+                    } else {
+                        $oldPlayerStat->win_rate = 0.00;
+                    }
+                    $oldPlayerStat->save();
+
+                    Log::info('Decremented old player stats', [
+                        'player_name' => $player->name,
+                        'old_hero' => $oldHeroName,
+                        'old_role' => $oldRole,
+                        'games_played' => $oldPlayerStat->games_played,
+                        'wins' => $oldPlayerStat->wins,
+                        'losses' => $oldPlayerStat->losses
+                    ]);
+                }
+            }
+
+            // Create or update stats for the new hero/role combination
+            $newPlayerStat = PlayerStat::where('team_id', $player->team_id)
                 ->where('player_name', $player->name)
-                ->where('hero_name', $heroName)
+                ->where('hero_name', $newHeroName)
                 ->first();
 
-            if (!$playerStat) {
-                $playerStat = PlayerStat::create([
+            if (!$newPlayerStat) {
+                $newPlayerStat = PlayerStat::create([
                     'team_id' => $player->team_id,
                     'player_name' => $player->name,
-                    'hero_name' => $heroName,
+                    'hero_name' => $newHeroName,
                     'games_played' => 0,
                     'wins' => 0,
                     'losses' => 0,
@@ -495,27 +536,27 @@ class MatchPlayerAssignmentController extends Controller
             }
 
             // Update the stats based on match result
-            $playerStat->increment('games_played');
+            $newPlayerStat->increment('games_played');
             
             if ($match->winner === 'win') {
-                $playerStat->increment('wins');
+                $newPlayerStat->increment('wins');
             } else {
-                $playerStat->increment('losses');
+                $newPlayerStat->increment('losses');
             }
 
             // Recalculate win rate
-            $playerStat->win_rate = $playerStat->wins / $playerStat->games_played;
-            $playerStat->save();
+            $newPlayerStat->win_rate = $newPlayerStat->wins / $newPlayerStat->games_played;
+            $newPlayerStat->save();
 
             Log::info('Updated player stats for role change', [
                 'player_name' => $player->name,
-                'hero_name' => $heroName,
+                'hero_name' => $newHeroName,
                 'old_role' => $oldRole,
                 'new_role' => $newRole,
-                'games_played' => $playerStat->games_played,
-                'wins' => $playerStat->wins,
-                'losses' => $playerStat->losses,
-                'win_rate' => $playerStat->win_rate
+                'games_played' => $newPlayerStat->games_played,
+                'wins' => $newPlayerStat->wins,
+                'losses' => $newPlayerStat->losses,
+                'win_rate' => $newPlayerStat->win_rate
             ]);
 
         } catch (\Exception $e) {
