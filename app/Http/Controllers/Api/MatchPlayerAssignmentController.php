@@ -355,6 +355,179 @@ class MatchPlayerAssignmentController extends Controller
     }
 
     /**
+     * Update player lane assignment in a match
+     */
+    public function updateLaneAssignment(Request $request): JsonResponse
+    {
+        $request->validate([
+            'match_id' => 'required|exists:matches,id',
+            'team_id' => 'required|exists:teams,id',
+            'player_id' => 'required|exists:players,id',
+            'old_role' => 'required|in:exp,mid,jungler,gold,roam',
+            'new_role' => 'required|in:exp,mid,jungler,gold,roam',
+            'hero_name' => 'nullable|string|max:255'
+        ]);
+
+        try {
+            $matchId = $request->input('match_id');
+            $teamId = $request->input('team_id');
+            $playerId = $request->input('player_id');
+            $oldRole = $request->input('old_role');
+            $newRole = $request->input('new_role');
+            $heroName = $request->input('hero_name');
+
+            DB::beginTransaction();
+
+            // Find the old assignment
+            $oldAssignment = MatchPlayerAssignment::where('match_id', $matchId)
+                ->where('player_id', $playerId)
+                ->where('role', $oldRole)
+                ->whereHas('player', function($query) use ($teamId) {
+                    $query->where('team_id', $teamId);
+                })
+                ->first();
+
+            if (!$oldAssignment) {
+                return response()->json([
+                    'error' => 'Player assignment not found for the specified role'
+                ], 404);
+            }
+
+            // Check if there's already an assignment for the new role
+            $existingNewRoleAssignment = MatchPlayerAssignment::where('match_id', $matchId)
+                ->where('role', $newRole)
+                ->whereHas('player', function($query) use ($teamId) {
+                    $query->where('team_id', $teamId);
+                })
+                ->first();
+
+            if ($existingNewRoleAssignment) {
+                return response()->json([
+                    'error' => 'Another player is already assigned to the ' . $newRole . ' role in this match'
+                ], 400);
+            }
+
+            // Update the assignment with new role and hero
+            $oldAssignment->update([
+                'role' => $newRole,
+                'hero_name' => $heroName ?? $oldAssignment->hero_name
+            ]);
+
+            // Update player statistics to reflect the role change
+            $this->updatePlayerStatsForRoleChange($matchId, $playerId, $oldRole, $newRole, $heroName);
+
+            // Sync with match teams data
+            $syncService = new MatchHeroSyncService();
+            $syncService->syncAllHeroesToMatchTeams($matchId);
+
+            DB::commit();
+
+            Log::info('Player lane assignment updated', [
+                'match_id' => $matchId,
+                'player_id' => $playerId,
+                'old_role' => $oldRole,
+                'new_role' => $newRole,
+                'hero_name' => $heroName
+            ]);
+
+            return response()->json([
+                'message' => 'Player lane assignment updated successfully',
+                'assignment' => $oldAssignment->fresh()
+            ])->header('Access-Control-Allow-Origin', '*')
+              ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+              ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error updating lane assignment', [
+                'match_id' => $request->input('match_id'),
+                'player_id' => $request->input('player_id'),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to update lane assignment',
+                'message' => $e->getMessage()
+            ], 500)->header('Access-Control-Allow-Origin', '*')
+              ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+              ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+        }
+    }
+
+    /**
+     * Update player statistics when role changes
+     */
+    private function updatePlayerStatsForRoleChange($matchId, $playerId, $oldRole, $newRole, $heroName)
+    {
+        try {
+            // Get the match to determine winner
+            $match = GameMatch::find($matchId);
+            if (!$match) {
+                return;
+            }
+
+            // Get the player
+            $player = Player::find($playerId);
+            if (!$player) {
+                return;
+            }
+
+            // Update player stats for the new role/hero combination
+            $playerStat = PlayerStat::where('team_id', $player->team_id)
+                ->where('player_name', $player->name)
+                ->where('hero_name', $heroName)
+                ->first();
+
+            if (!$playerStat) {
+                $playerStat = PlayerStat::create([
+                    'team_id' => $player->team_id,
+                    'player_name' => $player->name,
+                    'hero_name' => $heroName,
+                    'games_played' => 0,
+                    'wins' => 0,
+                    'losses' => 0,
+                    'win_rate' => 0.00,
+                    'kills' => 0,
+                    'deaths' => 0,
+                    'assists' => 0,
+                    'kda_ratio' => 0.00
+                ]);
+            }
+
+            // Update the stats based on match result
+            $playerStat->increment('games_played');
+            
+            if ($match->winner === 'win') {
+                $playerStat->increment('wins');
+            } else {
+                $playerStat->increment('losses');
+            }
+
+            // Recalculate win rate
+            $playerStat->win_rate = $playerStat->wins / $playerStat->games_played;
+            $playerStat->save();
+
+            Log::info('Updated player stats for role change', [
+                'player_name' => $player->name,
+                'hero_name' => $heroName,
+                'old_role' => $oldRole,
+                'new_role' => $newRole,
+                'games_played' => $playerStat->games_played,
+                'wins' => $playerStat->wins,
+                'losses' => $playerStat->losses,
+                'win_rate' => $playerStat->win_rate
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error updating player stats for role change', [
+                'match_id' => $matchId,
+                'player_id' => $playerId,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
      * Get match data with synchronized teams and hero assignments
      */
     public function getMatchWithSync(Request $request, $match_id): JsonResponse

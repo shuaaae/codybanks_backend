@@ -625,3 +625,13 @@ Route::get('/match-player-assignments/{match_id}/sync', function (Request $reque
     $controller = new \App\Http\Controllers\Api\MatchPlayerAssignmentController();
     return $controller->getMatchWithSync($request, $match_id);
 });
+
+// Update lane assignment route
+Route::options('/match-player-assignments/update-lane', function () {
+    return response('', 200)
+        ->header('Access-Control-Allow-Origin', '*')
+        ->header('Access-Control-Allow-Methods', 'PUT, OPTIONS')
+        ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+});
+
+Route::put('/match-player-assignments/update-lane', [App\Http\Controllers\Api\MatchPlayerAssignmentController::class, 'updateLaneAssignment']);
