@@ -750,6 +750,15 @@ class MatchPlayerAssignmentController extends Controller
             // Calculate H2H statistics
             $h2hStats = $this->calculateH2HStatistics($matches, $allPlayerNames);
 
+            Log::info('Final API response', [
+                'team_id' => $teamId,
+                'match_type' => $matchType,
+                'total_matches' => $matches->count(),
+                'player_statistics_keys' => array_keys($groupedStats),
+                'player_statistics' => $groupedStats,
+                'h2h_statistics_keys' => array_keys($h2hStats)
+            ]);
+
             return response()->json([
                 'player_statistics' => $groupedStats,
                 'h2h_statistics' => $h2hStats,
