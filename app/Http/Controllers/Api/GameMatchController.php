@@ -363,34 +363,69 @@ class GameMatchController extends Controller
                 'annual_map'   => $validated['annual_map'] ?? null,
             ]);
 
-            // Recreate children
-            $match->teams()->delete();
-            foreach ($validated['teams'] as $t) {
-                // Ensure all array fields have default values
-                $teamData = [
-                    'match_id' => $match->id,
-                    'team' => $t['team'],
-                    'team_color' => $t['team_color'],
-                    'banning_phase1' => $t['banning_phase1'] ?? [],
-                    'banning_phase2' => $t['banning_phase2'] ?? [],
-                    'picks1' => $t['picks1'] ?? [],
-                    'picks2' => $t['picks2'] ?? [],
-                ];
+            // Update existing team records instead of recreating them
+            $existingTeams = $match->teams;
+            
+            foreach ($validated['teams'] as $index => $t) {
+                $teamColor = $t['team_color'];
+                $existingTeam = $existingTeams->where('team_color', $teamColor)->first();
                 
-                // Log each team being created
-                \Log::info('Creating updated match team', [
-                    'match_id' => $match->id,
-                    'team_name' => $teamData['team'],
-                    'team_color' => $teamData['team_color'],
-                    'banning_phase1_count' => count($teamData['banning_phase1']),
-                    'banning_phase2_count' => count($teamData['banning_phase2']),
-                    'picks1_count' => count($teamData['picks1']),
-                    'picks2_count' => count($teamData['picks2']),
-                    'picks1_sample' => array_slice($teamData['picks1'], 0, 2),
-                    'picks2_sample' => array_slice($teamData['picks2'], 0, 2),
-                ]);
-                
-                MatchTeam::create($teamData);
+                if ($existingTeam) {
+                    // Update existing team record
+                    $updateData = [
+                        'team' => $t['team'],
+                    ];
+                    
+                    // Only update picks and bans if they have actual data (not empty arrays)
+                    if (isset($t['banning_phase1']) && !empty($t['banning_phase1'])) {
+                        $updateData['banning_phase1'] = $t['banning_phase1'];
+                    }
+                    if (isset($t['banning_phase2']) && !empty($t['banning_phase2'])) {
+                        $updateData['banning_phase2'] = $t['banning_phase2'];
+                    }
+                    if (isset($t['picks1']) && !empty($t['picks1'])) {
+                        $updateData['picks1'] = $t['picks1'];
+                    }
+                    if (isset($t['picks2']) && !empty($t['picks2'])) {
+                        $updateData['picks2'] = $t['picks2'];
+                    }
+                    
+                    $existingTeam->update($updateData);
+                    
+                    \Log::info('Updated existing match team', [
+                        'match_id' => $match->id,
+                        'team_name' => $updateData['team'],
+                        'team_color' => $teamColor,
+                        'updated_fields' => array_keys($updateData),
+                        'banning_phase1_count' => count($existingTeam->banning_phase1 ?? []),
+                        'banning_phase2_count' => count($existingTeam->banning_phase2 ?? []),
+                        'picks1_count' => count($existingTeam->picks1 ?? []),
+                        'picks2_count' => count($existingTeam->picks2 ?? []),
+                    ]);
+                } else {
+                    // Create new team record if it doesn't exist
+                    $teamData = [
+                        'match_id' => $match->id,
+                        'team' => $t['team'],
+                        'team_color' => $t['team_color'],
+                        'banning_phase1' => $t['banning_phase1'] ?? [],
+                        'banning_phase2' => $t['banning_phase2'] ?? [],
+                        'picks1' => $t['picks1'] ?? [],
+                        'picks2' => $t['picks2'] ?? [],
+                    ];
+                    
+                    MatchTeam::create($teamData);
+                    
+                    \Log::info('Created new match team', [
+                        'match_id' => $match->id,
+                        'team_name' => $teamData['team'],
+                        'team_color' => $teamData['team_color'],
+                        'banning_phase1_count' => count($teamData['banning_phase1']),
+                        'banning_phase2_count' => count($teamData['banning_phase2']),
+                        'picks1_count' => count($teamData['picks1']),
+                        'picks2_count' => count($teamData['picks2']),
+                    ]);
+                }
             }
 
             // DO NOT sync all hero assignments - this corrupts the original match picks data
