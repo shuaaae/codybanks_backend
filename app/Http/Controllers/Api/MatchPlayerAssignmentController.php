@@ -515,10 +515,37 @@ class MatchPlayerAssignmentController extends Controller
                 ->first();
 
             if (!$assignment1 || !$assignment2) {
+                Log::error('Player assignments not found for lane swap', [
+                    'match_id' => $matchId,
+                    'team_id' => $teamId,
+                    'player1_id' => $player1Id,
+                    'player2_id' => $player2Id,
+                    'assignment1_found' => $assignment1 ? true : false,
+                    'assignment2_found' => $assignment2 ? true : false
+                ]);
                 return response()->json([
                     'error' => 'One or both player assignments not found'
                 ], 404);
             }
+            
+            Log::info('Found player assignments for lane swap', [
+                'match_id' => $matchId,
+                'team_id' => $teamId,
+                'assignment1' => [
+                    'id' => $assignment1->id,
+                    'player_id' => $assignment1->player_id,
+                    'player_name' => $assignment1->player->name ?? 'unknown',
+                    'role' => $assignment1->role,
+                    'hero_name' => $assignment1->hero_name
+                ],
+                'assignment2' => [
+                    'id' => $assignment2->id,
+                    'player_id' => $assignment2->player_id,
+                    'player_name' => $assignment2->player->name ?? 'unknown',
+                    'role' => $assignment2->role,
+                    'hero_name' => $assignment2->hero_name
+                ]
+            ]);
 
             // Store old roles and heroes for statistics update
             $player1OldRole = $assignment1->role;
@@ -549,12 +576,15 @@ class MatchPlayerAssignmentController extends Controller
 
             Log::info('Lane assignments swapped successfully', [
                 'match_id' => $matchId,
+                'team_id' => $teamId,
                 'player1_id' => $player1Id,
                 'player2_id' => $player2Id,
                 'player1_old_role' => $player1OldRole,
                 'player1_new_role' => $player1NewRole,
                 'player2_old_role' => $player2OldRole,
-                'player2_new_role' => $player2NewRole
+                'player2_new_role' => $player2NewRole,
+                'player1_hero' => $player1HeroName ?? $assignment1->hero_name,
+                'player2_hero' => $player2HeroName ?? $assignment2->hero_name
             ]);
 
             return response()->json([
