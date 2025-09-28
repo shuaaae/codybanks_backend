@@ -514,21 +514,38 @@ class MatchPlayerAssignmentController extends Controller
                 })
                 ->first();
 
-            if (!$assignment1 || !$assignment2) {
-                Log::error('Player assignments not found for lane swap', [
+            // If assignments don't exist, create them
+            if (!$assignment1) {
+                Log::info('Creating missing player assignment for player1', [
                     'match_id' => $matchId,
-                    'team_id' => $teamId,
-                    'player1_id' => $player1Id,
-                    'player2_id' => $player2Id,
-                    'assignment1_found' => $assignment1 ? true : false,
-                    'assignment2_found' => $assignment2 ? true : false
+                    'player_id' => $player1Id,
+                    'team_id' => $teamId
                 ]);
-                return response()->json([
-                    'error' => 'One or both player assignments not found'
-                ], 404);
+                
+                $assignment1 = MatchPlayerAssignment::create([
+                    'match_id' => $matchId,
+                    'player_id' => $player1Id,
+                    'role' => $request->input('player1_new_role'), // Use the new role from request
+                    'hero_name' => $player1HeroName
+                ]);
             }
             
-            Log::info('Found player assignments for lane swap', [
+            if (!$assignment2) {
+                Log::info('Creating missing player assignment for player2', [
+                    'match_id' => $matchId,
+                    'player_id' => $player2Id,
+                    'team_id' => $teamId
+                ]);
+                
+                $assignment2 = MatchPlayerAssignment::create([
+                    'match_id' => $matchId,
+                    'player_id' => $player2Id,
+                    'role' => $request->input('player2_new_role'), // Use the new role from request
+                    'hero_name' => $player2HeroName
+                ]);
+            }
+            
+            Log::info('Player assignments ready for lane swap', [
                 'match_id' => $matchId,
                 'team_id' => $teamId,
                 'assignment1' => [
@@ -536,22 +553,24 @@ class MatchPlayerAssignmentController extends Controller
                     'player_id' => $assignment1->player_id,
                     'player_name' => $assignment1->player->name ?? 'unknown',
                     'role' => $assignment1->role,
-                    'hero_name' => $assignment1->hero_name
+                    'hero_name' => $assignment1->hero_name,
+                    'was_created' => !$assignment1->wasRecentlyCreated ? 'existing' : 'newly_created'
                 ],
                 'assignment2' => [
                     'id' => $assignment2->id,
                     'player_id' => $assignment2->player_id,
                     'player_name' => $assignment2->player->name ?? 'unknown',
                     'role' => $assignment2->role,
-                    'hero_name' => $assignment2->hero_name
+                    'hero_name' => $assignment2->hero_name,
+                    'was_created' => !$assignment2->wasRecentlyCreated ? 'existing' : 'newly_created'
                 ]
             ]);
 
             // Store old roles and heroes for statistics update
-            $player1OldRole = $assignment1->role;
-            $player1OldHero = $assignment1->hero_name;
-            $player2OldRole = $assignment2->role;
-            $player2OldHero = $assignment2->hero_name;
+            $player1OldRole = $assignment1->role ?? null;
+            $player1OldHero = $assignment1->hero_name ?? null;
+            $player2OldRole = $assignment2->role ?? null;
+            $player2OldHero = $assignment2->hero_name ?? null;
 
             // Update both assignments simultaneously
             $assignment1->update([
@@ -564,9 +583,13 @@ class MatchPlayerAssignmentController extends Controller
                 'hero_name' => $player2HeroName ?? $assignment2->hero_name
             ]);
 
-            // Update player statistics for both players
-            $this->updatePlayerStatsForRoleChange($matchId, $player1Id, $player1OldRole, $player1NewRole, $player1HeroName ?? $assignment1->hero_name, $player1OldHero);
-            $this->updatePlayerStatsForRoleChange($matchId, $player2Id, $player2OldRole, $player2NewRole, $player2HeroName ?? $assignment2->hero_name, $player2OldHero);
+            // Update player statistics for both players (only if we had old roles/heroes)
+            if ($player1OldRole && $player1OldHero) {
+                $this->updatePlayerStatsForRoleChange($matchId, $player1Id, $player1OldRole, $player1NewRole, $player1HeroName ?? $assignment1->hero_name, $player1OldHero);
+            }
+            if ($player2OldRole && $player2OldHero) {
+                $this->updatePlayerStatsForRoleChange($matchId, $player2Id, $player2OldRole, $player2NewRole, $player2HeroName ?? $assignment2->hero_name, $player2OldHero);
+            }
 
             // DO NOT sync with match teams data - this corrupts the original picks data
             // Lane swapping should only update MatchPlayerAssignment records
