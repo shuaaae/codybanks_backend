@@ -396,12 +396,15 @@ class GameMatchController extends Controller
         } catch (\Exception $e) {
             \Log::error('GameMatchController::update error', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->all(),
+                'match_id' => $id
             ]);
             
             return response()->json([
                 'error' => 'Failed to update match',
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
+                'details' => $e->getTraceAsString()
             ], 500);
         }
     }
