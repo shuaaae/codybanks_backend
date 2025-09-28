@@ -768,7 +768,15 @@ class MatchPlayerAssignmentController extends Controller
             
             foreach ($playerStats as $key => $stats) {
                 $playerName = $stats['player_name'];
-                $groupedStats[$playerName][] = $stats;
+                $groupedStats[$playerName][] = [
+                    'hero_name' => $stats['hero_name'],
+                    'role' => $stats['role'],
+                    'wins' => $stats['wins'],
+                    'losses' => $stats['losses'],
+                    'games_played' => $stats['games_played'],
+                    'win_rate' => $stats['win_rate'],
+                    'is_edited' => $stats['is_edited']
+                ];
             }
 
             // Calculate H2H statistics
