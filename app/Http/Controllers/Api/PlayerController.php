@@ -346,133 +346,92 @@ class PlayerController extends Controller
             'matchType' => $matchType
         ]);
         
-        // CRITICAL FIX: Always filter by the current team's ID to prevent data mixing
-        // Get match_teams joined with matches, filtered by the current team ID
-        $query = \App\Models\MatchTeam::with('match');
-        
-        // Always filter by the current team ID to ensure data isolation
-        if ($activeTeamId) {
-            $query->whereHas('match', function($q) use ($activeTeamId, $matchType) {
-                $q->where('team_id', $activeTeamId)
-                  ->where('match_type', $matchType);
-            });
-        } else {
-            // If no active team ID, return empty results to prevent data leakage
-            \Log::warning("No active team ID found, returning empty stats to prevent data mixing");
+        // Find the player in the team
+        $player = \App\Models\Player::where('name', $playerName)
+            ->where('team_id', $activeTeamId)
+            ->first();
+            
+        if (!$player) {
+            \Log::warning("Player not found in team", [
+                'playerName' => $playerName,
+                'activeTeamId' => $activeTeamId
+            ]);
             return response()->json([]);
         }
         
-        // Additional filter by team name if provided (for extra safety)
-        if ($teamName) {
-            $query->where('team', $teamName);
-        }
-        
-        $matchTeams = $query->get();
-        
-        // Debug: Log all match teams
-        \Log::info("Found match teams", [
-            'count' => $matchTeams->count(),
-            'teams' => $matchTeams->map(function($team) {
+        // Get all match assignments for this player
+        $assignments = \App\Models\MatchPlayerAssignment::where('player_id', $player->id)
+            ->with(['match' => function($query) use ($activeTeamId, $matchType) {
+                $query->where('team_id', $activeTeamId)
+                      ->where('match_type', $matchType);
+            }])
+            ->get();
+            
+        \Log::info("Found player assignments", [
+            'playerName' => $playerName,
+            'assignmentsCount' => $assignments->count(),
+            'assignments' => $assignments->map(function($assignment) {
                 return [
-                    'team' => $team->team,
-                    'picks1' => $team->picks1,
-                    'picks2' => $team->picks2
+                    'match_id' => $assignment->match_id,
+                    'role' => $assignment->role,
+                    'hero_name' => $assignment->hero_name,
+                    'match_type' => $assignment->match ? $assignment->match->match_type : 'unknown',
+                    'winner' => $assignment->match ? $assignment->match->winner : 'unknown'
                 ];
             })
         ]);
         
-        // CRITICAL: Log the exact data structure being processed
-        \Log::info("Raw match data for player {$playerName}:", [
-            'playerName' => $playerName,
-            'activeTeamId' => $activeTeamId,
-            'teamName' => $teamName,
-            'matchTeamsData' => $matchTeams->toArray()
-        ]);
-        
         $heroStats = [];
 
-        foreach ($matchTeams as $team) {
-            $match = $team->match;
-            if (!$match) continue; // Skip if no match
+        foreach ($assignments as $assignment) {
+            $match = $assignment->match;
+            if (!$match) continue;
             
-            // Double-check that this match belongs to the current team
-            if ($match->team_id != $activeTeamId) {
-                \Log::warning("Match {$match->id} does not belong to current team {$activeTeamId}, skipping");
-                continue;
-            }
-            
-            $isWin = $team->team === $match->winner;
-            // Combine picks1 and picks2
-            $picks = array_merge($team->picks1 ?? [], $team->picks2 ?? []);
-            
-            // Debug logging for picks
-            \Log::info("Processing picks for player {$playerName} in team {$team->team}", [
-                'match_id' => $match->id,
-                'is_win' => $isWin,
-                'picks_count' => count($picks),
-                'picks_sample' => array_slice($picks, 0, 3) // Log first 3 picks
-            ]);
-            
-            // CRITICAL: Log all picks to see the exact data structure
-            \Log::info("All picks for team {$team->team}:", [
-                'picks1' => $team->picks1,
-                'picks2' => $team->picks2,
-                'merged_picks' => $picks
-            ]);
-            
-            foreach ($picks as $pick) {
-                // Check if this pick matches the specific player, not just the role
-                if (is_array($pick) && isset($pick['hero']) && isset($pick['lane'])) {
-                    $hero = $pick['hero'];
-                    $pickPlayerName = null;
+            // Get the hero name from the assignment
+            $hero = $assignment->hero_name;
+            if (!$hero) {
+                // If no hero name in assignment, try to get it from the match team picks
+                $matchTeam = \App\Models\MatchTeam::where('match_id', $match->id)
+                    ->where('team', $teamName)
+                    ->first();
                     
-                    // Extract player name from various possible data structures
-                    if (isset($pick['player'])) {
-                        if (is_object($pick['player']) && isset($pick['player']['name'])) {
-                            $pickPlayerName = $pick['player']['name'];
-                        } elseif (is_string($pick['player'])) {
-                            $pickPlayerName = $pick['player'];
-                        } elseif (is_array($pick['player']) && isset($pick['player']['name'])) {
-                            $pickPlayerName = $pick['player']['name'];
+                if ($matchTeam) {
+                    $picks = array_merge($matchTeam->picks1 ?? [], $matchTeam->picks2 ?? []);
+                    foreach ($picks as $pick) {
+                        if (is_array($pick) && isset($pick['lane']) && isset($pick['hero'])) {
+                            if (strtolower($pick['lane']) === strtolower($assignment->role)) {
+                                $hero = $pick['hero'];
+                                break;
+                            }
                         }
-                    }
-                    
-                    // Also check for direct player name in pick (fallback for older data)
-                    if (!$pickPlayerName && isset($pick['player_name'])) {
-                        $pickPlayerName = $pick['player_name'];
-                    }
-                    
-                    // Check if this pick belongs to the requested player
-                    if ($pickPlayerName && strtolower($pickPlayerName) === strtolower($playerName)) {
-                        if (!isset($heroStats[$hero])) {
-                            $heroStats[$hero] = ['win' => 0, 'lose' => 0, 'total' => 0];
-                        }
-                        $heroStats[$hero]['total']++;
-                        if ($isWin) {
-                            $heroStats[$hero]['win']++;
-                        } else {
-                            $heroStats[$hero]['lose']++;
-                        }
-                        
-                        // Log successful match for debugging
-                        \Log::info("Player stats match found", [
-                            'playerName' => $playerName,
-                            'pickPlayerName' => $pickPlayerName,
-                            'hero' => $hero,
-                            'match_id' => $match->id,
-                            'is_win' => $isWin
-                        ]);
-                    } else {
-                        // Log skipped pick for debugging
-                        \Log::debug("Pick skipped - player mismatch", [
-                            'requestedPlayer' => $playerName,
-                            'pickPlayerName' => $pickPlayerName,
-                            'pick' => $pick,
-                            'match_id' => $match->id
-                        ]);
                     }
                 }
             }
+            
+            if (!$hero) continue;
+            
+            // Determine if this was a win or loss
+            $isWin = $match->winner === $teamName;
+            
+            if (!isset($heroStats[$hero])) {
+                $heroStats[$hero] = ['win' => 0, 'lose' => 0, 'total' => 0];
+            }
+            $heroStats[$hero]['total']++;
+            if ($isWin) {
+                $heroStats[$hero]['win']++;
+            } else {
+                $heroStats[$hero]['lose']++;
+            }
+            
+            // Log successful match for debugging
+            \Log::info("Player stats match found", [
+                'playerName' => $playerName,
+                'hero' => $hero,
+                'match_id' => $match->id,
+                'is_win' => $isWin,
+                'winner' => $match->winner,
+                'teamName' => $teamName
+            ]);
         }
         
         // Calculate winrate
@@ -524,135 +483,113 @@ class PlayerController extends Controller
             'matchType' => $matchType
         ]);
         
-        // CRITICAL FIX: Always filter by the current team's ID to prevent data mixing
-        // Filter by team name if provided, but always ensure matches belong to current team
-        $query = \App\Models\MatchTeam::with('match');
-        
-        // Always filter by the current team ID to ensure data isolation
-        if ($activeTeamId) {
-            $query->whereHas('match', function($q) use ($activeTeamId, $matchType) {
-                $q->where('team_id', $activeTeamId)
-                  ->where('match_type', $matchType);
-            });
-        } else {
-            // If no active team ID, return empty results to prevent data leakage
-            \Log::warning("No active team ID found for H2H stats, returning empty results to prevent data mixing");
+        // Find the player in the team
+        $player = \App\Models\Player::where('name', $playerName)
+            ->where('team_id', $activeTeamId)
+            ->first();
+            
+        if (!$player) {
+            \Log::warning("Player not found in team for H2H stats", [
+                'playerName' => $playerName,
+                'activeTeamId' => $activeTeamId
+            ]);
             return response()->json([]);
         }
         
-        // Additional filter by team name if provided (for extra safety)
-        if ($teamName) {
-            $query->where('team', $teamName);
-        }
-        
-        $matchTeams = $query->get();
-        
-        \Log::info("Found match teams for H2H", [
-            'count' => $matchTeams->count(),
-            'teams' => $matchTeams->pluck('team')->toArray()
+        // Get all match assignments for this player
+        $assignments = \App\Models\MatchPlayerAssignment::where('player_id', $player->id)
+            ->with(['match.teams' => function($query) use ($matchType) {
+                $query->where('match_type', $matchType);
+            }])
+            ->get();
+            
+        \Log::info("Found player assignments for H2H", [
+            'playerName' => $playerName,
+            'assignmentsCount' => $assignments->count()
         ]);
         
         $h2hStats = [];
 
-        foreach ($matchTeams as $team) {
-            $match = $team->match;
+        foreach ($assignments as $assignment) {
+            $match = $assignment->match;
             if (!$match) continue;
             
-            // Double-check that this match belongs to the current team
-            if ($match->team_id != $activeTeamId) {
-                \Log::warning("Match {$match->id} does not belong to current team {$activeTeamId} for H2H stats, skipping");
-                continue;
+            // Get the hero name from the assignment
+            $playerHero = $assignment->hero_name;
+            if (!$playerHero) {
+                // If no hero name in assignment, try to get it from the match team picks
+                $matchTeam = \App\Models\MatchTeam::where('match_id', $match->id)
+                    ->where('team', $teamName)
+                    ->first();
+                    
+                if ($matchTeam) {
+                    $picks = array_merge($matchTeam->picks1 ?? [], $matchTeam->picks2 ?? []);
+                    foreach ($picks as $pick) {
+                        if (is_array($pick) && isset($pick['lane']) && isset($pick['hero'])) {
+                            if (strtolower($pick['lane']) === strtolower($assignment->role)) {
+                                $playerHero = $pick['hero'];
+                                break;
+                            }
+                        }
+                    }
+                }
             }
             
-            $isWin = $team->team === $match->winner;
+            if (!$playerHero) continue;
             
             // Find the enemy team in the same match
-            $enemyTeam = $match->teams->first(function($t) use ($team) {
-                return $t->id !== $team->id;
+            $enemyTeam = $match->teams->first(function($t) use ($teamName) {
+                return $t->team !== $teamName;
             });
             if (!$enemyTeam) continue;
             
-            // Combine picks1 and picks2 for both teams
-            $picks = array_merge($team->picks1 ?? [], $team->picks2 ?? []);
+            // Get enemy picks
             $enemyPicks = array_merge($enemyTeam->picks1 ?? [], $enemyTeam->picks2 ?? []);
             
-            foreach ($picks as $pick) {
-                // Check if this pick matches the specific player, not just the role
-                if (is_array($pick) && isset($pick['hero']) && isset($pick['lane'])) {
-                    $pickPlayerName = null;
-                    
-                    // Extract player name from various possible data structures
-                    if (isset($pick['player'])) {
-                        if (is_object($pick['player']) && isset($pick['player']['name'])) {
-                            $pickPlayerName = $pick['player']['name'];
-                        } elseif (is_string($pick['player'])) {
-                            $pickPlayerName = $pick['player'];
-                        } elseif (is_array($pick['player']) && isset($pick['player']['name'])) {
-                            $pickPlayerName = $pick['player']['name'];
-                        }
+            // Find enemy hero in the same lane
+            $enemyHero = null;
+            foreach ($enemyPicks as $ep) {
+                if (is_array($ep) && isset($ep['hero']) && isset($ep['lane'])) {
+                    if (strtolower($ep['lane']) === strtolower($assignment->role)) {
+                        $enemyHero = $ep['hero'];
+                        break;
                     }
-                    
-                    // Also check for direct player name in pick (fallback for older data)
-                    if (!$pickPlayerName && isset($pick['player_name'])) {
-                        $pickPlayerName = $pick['player_name'];
-                    }
-                    
-                    // Check if this pick belongs to the requested player
-                    if (!$pickPlayerName || strtolower($pickPlayerName) !== strtolower($playerName)) {
-                        // Log skipped pick for debugging
-                        \Log::debug("H2H Pick skipped - player mismatch", [
-                            'requestedPlayer' => $playerName,
-                            'pickPlayerName' => $pickPlayerName,
-                            'pick' => $pick,
-                            'match_id' => $match->id
-                        ]);
-                        continue;
-                    }
-                    
-                    $playerHero = $pick['hero'];
-                    $lane = $pick['lane'];
-                    
-                    // Find enemy hero in the same lane
-                    $enemyPick = null;
-                    foreach ($enemyPicks as $ep) {
-                        if (is_array($ep) && isset($ep['hero']) && isset($ep['lane']) && strtolower($ep['lane']) === strtolower($lane)) {
-                            $enemyPick = $ep;
-                            break;
-                        }
-                    }
-                    
-                    if (!$enemyPick) continue;
-                    
-                    $enemyHero = $enemyPick['hero'];
-                    $key = $playerHero . ' vs ' . $enemyHero;
-                    
-                    if (!isset($h2hStats[$key])) {
-                        $h2hStats[$key] = [
-                            'player_hero' => $playerHero,
-                            'enemy_hero' => $enemyHero,
-                            'win' => 0,
-                            'lose' => 0,
-                            'total' => 0
-                        ];
-                    }
-                    $h2hStats[$key]['total']++;
-                    if ($isWin) {
-                        $h2hStats[$key]['win']++;
-                    } else {
-                        $h2hStats[$key]['lose']++;
-                    }
-                    
-                    // Log successful H2H match for debugging
-                    \Log::info("H2H Player stats match found", [
-                        'playerName' => $playerName,
-                        'pickPlayerName' => $pickPlayerName,
-                        'playerHero' => $playerHero,
-                        'enemyHero' => $enemyHero,
-                        'match_id' => $match->id,
-                        'is_win' => $isWin
-                    ]);
                 }
             }
+            
+            if (!$enemyHero) continue;
+            
+            // Determine if this was a win or loss
+            $isWin = $match->winner === $teamName;
+            
+            $key = $playerHero . ' vs ' . $enemyHero;
+            
+            if (!isset($h2hStats[$key])) {
+                $h2hStats[$key] = [
+                    'player_hero' => $playerHero,
+                    'enemy_hero' => $enemyHero,
+                    'win' => 0,
+                    'lose' => 0,
+                    'total' => 0
+                ];
+            }
+            $h2hStats[$key]['total']++;
+            if ($isWin) {
+                $h2hStats[$key]['win']++;
+            } else {
+                $h2hStats[$key]['lose']++;
+            }
+            
+            // Log successful H2H match for debugging
+            \Log::info("H2H Player stats match found", [
+                'playerName' => $playerName,
+                'playerHero' => $playerHero,
+                'enemyHero' => $enemyHero,
+                'match_id' => $match->id,
+                'is_win' => $isWin,
+                'winner' => $match->winner,
+                'teamName' => $teamName
+            ]);
         }
         
         // Calculate winrate
