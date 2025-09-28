@@ -648,27 +648,33 @@ class MatchPlayerAssignmentController extends Controller
                         'has_assignments' => $match->playerAssignments->count() > 0
                     ]);
                     
+                    // Map roles to player names based on team players
+                    $roleToPlayerMap = [];
+                    foreach ($teamPlayers as $player) {
+                        $roleToPlayerMap[strtolower($player->role)] = $player->name;
+                    }
+                    
                     foreach ($allPicks as $index => $pick) {
                             $playerName = null;
                             $heroName = null;
                             $role = 'unknown';
                             
                             if (is_array($pick)) {
-                                if (isset($pick['player']) && isset($pick['hero'])) {
-                                    $playerName = $pick['player']['name'] ?? $pick['player'];
-                                    $heroName = $pick['hero']['name'] ?? $pick['hero'];
-                                    $role = $pick['lane'] ?? 'unknown';
-                                } elseif (isset($pick['name']) && isset($pick['hero'])) {
-                                    $playerName = $pick['name'];
+                                if (isset($pick['hero']) && isset($pick['lane'])) {
                                     $heroName = $pick['hero'];
-                                    $role = $pick['lane'] ?? 'unknown';
+                                    $role = $pick['lane'];
+                                    // Map role to actual player name
+                                    $playerName = $roleToPlayerMap[strtolower($role)] ?? null;
                                 }
                             } elseif (is_string($pick)) {
                                 $heroName = $pick;
-                                $playerName = "Player_" . ($index + 1);
+                                // Map index to role based on standard lane order
+                                $laneOrder = ['exp', 'mid', 'jungler', 'gold', 'roam'];
+                                $role = $laneOrder[$index] ?? 'unknown';
+                                $playerName = $roleToPlayerMap[strtolower($role)] ?? null;
                             }
                             
-                            // Only add if this player doesn't have an edited assignment
+                            // Only add if this player doesn't have an edited assignment and we found a valid player name
                             if ($playerName && $heroName && !isset($matchPlayers[$playerName])) {
                                 $matchPlayers[$playerName] = [
                                     'player_name' => $playerName,
@@ -802,27 +808,33 @@ class MatchPlayerAssignmentController extends Controller
                 if ($team->team_id == $match->team_id) {
                     $allPicks = array_merge($team->picks1 ?? [], $team->picks2 ?? []);
                     
+                    // Map roles to player names based on team players
+                    $roleToPlayerMap = [];
+                    foreach ($teamPlayers as $player) {
+                        $roleToPlayerMap[strtolower($player->role)] = $player->name;
+                    }
+                    
                     foreach ($allPicks as $index => $pick) {
                         $playerName = null;
                         $heroName = null;
                         $role = 'unknown';
                         
                         if (is_array($pick)) {
-                            if (isset($pick['player']) && isset($pick['hero'])) {
-                                $playerName = $pick['player']['name'] ?? $pick['player'];
-                                $heroName = $pick['hero']['name'] ?? $pick['hero'];
-                                $role = $pick['lane'] ?? 'unknown';
-                            } elseif (isset($pick['name']) && isset($pick['hero'])) {
-                                $playerName = $pick['name'];
+                            if (isset($pick['hero']) && isset($pick['lane'])) {
                                 $heroName = $pick['hero'];
-                                $role = $pick['lane'] ?? 'unknown';
+                                $role = $pick['lane'];
+                                // Map role to actual player name
+                                $playerName = $roleToPlayerMap[strtolower($role)] ?? null;
                             }
                         } elseif (is_string($pick)) {
                             $heroName = $pick;
-                            $playerName = "Player_" . ($index + 1);
+                            // Map index to role based on standard lane order
+                            $laneOrder = ['exp', 'mid', 'jungler', 'gold', 'roam'];
+                            $role = $laneOrder[$index] ?? 'unknown';
+                            $playerName = $roleToPlayerMap[strtolower($role)] ?? null;
                         }
                         
-                        // Only add if this player doesn't have an edited assignment
+                        // Only add if this player doesn't have an edited assignment and we found a valid player name
                         if ($playerName && $heroName && !isset($matchPlayers[$playerName])) {
                             $matchPlayers[$playerName] = [
                                 'player_name' => $playerName,
