@@ -433,9 +433,9 @@ class MatchPlayerAssignmentController extends Controller
             // Update player statistics to reflect the role change
             $this->updatePlayerStatsForRoleChange($matchId, $playerId, $oldRole, $newRole, $heroName ?? $assignment->hero_name, $oldHeroName);
 
-            // Sync with match teams data
-            $syncService = new MatchHeroSyncService();
-            $syncService->syncAllHeroesToMatchTeams($matchId);
+            // DO NOT sync with match teams data - this corrupts the original picks data
+            // Lane assignment updates should only update MatchPlayerAssignment records
+            // The original match picks data should remain intact for fresh matches
 
             DB::commit();
 
@@ -541,9 +541,9 @@ class MatchPlayerAssignmentController extends Controller
             $this->updatePlayerStatsForRoleChange($matchId, $player1Id, $player1OldRole, $player1NewRole, $player1HeroName ?? $assignment1->hero_name, $player1OldHero);
             $this->updatePlayerStatsForRoleChange($matchId, $player2Id, $player2OldRole, $player2NewRole, $player2HeroName ?? $assignment2->hero_name, $player2OldHero);
 
-            // Sync with match teams data
-            $syncService = new MatchHeroSyncService();
-            $syncService->syncAllHeroesToMatchTeams($matchId);
+            // DO NOT sync with match teams data - this corrupts the original picks data
+            // Lane swapping should only update MatchPlayerAssignment records
+            // The original match picks data should remain intact for fresh matches
 
             DB::commit();
 
