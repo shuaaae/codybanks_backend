@@ -255,9 +255,9 @@ class GameMatchController extends Controller
                 return response()->json(['error' => 'Match not found or access denied'], 404);
             }
 
-            // Sync heroes to ensure match teams data is up to date
-            $syncService = new MatchHeroSyncService();
-            $syncService->syncAllHeroesToMatchTeams($match->id);
+            // DO NOT sync heroes - this corrupts the original match picks data
+            // Lane swapping should only update MatchPlayerAssignment records
+            // The original match picks data should remain intact for fresh matches
 
             // Reload the match with updated data
             $match->load([
@@ -381,9 +381,9 @@ class GameMatchController extends Controller
                 MatchTeam::create($t);
             }
 
-            // Sync all hero assignments to match teams data
-            $syncService = new MatchHeroSyncService();
-            $syncService->syncAllHeroesToMatchTeams($match->id);
+            // DO NOT sync all hero assignments - this corrupts the original match picks data
+            // Lane swapping should only update MatchPlayerAssignment records
+            // The original match picks data should remain intact for fresh matches
 
             // Return the fresh match with its new teams
             $match->load([

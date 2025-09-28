@@ -1129,9 +1129,9 @@ class MatchPlayerAssignmentController extends Controller
                 ], 404);
             }
 
-            // Sync all heroes to ensure match teams data is up to date
-            $syncService = new MatchHeroSyncService();
-            $syncService->syncAllHeroesToMatchTeams($match->id);
+            // DO NOT sync all heroes - this corrupts the original match picks data
+            // Lane swapping should only update MatchPlayerAssignment records
+            // The original match picks data should remain intact for fresh matches
 
             // Reload the match with updated data
             $match->load([
