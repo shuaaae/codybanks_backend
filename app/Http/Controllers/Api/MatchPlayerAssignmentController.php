@@ -654,6 +654,12 @@ class MatchPlayerAssignmentController extends Controller
                         $roleToPlayerMap[strtolower($player->role)] = $player->name;
                     }
                     
+                    Log::info('Role to Player Mapping', [
+                        'match_id' => $match->id,
+                        'roleToPlayerMap' => $roleToPlayerMap,
+                        'allPicks' => $allPicks
+                    ]);
+                    
                     foreach ($allPicks as $index => $pick) {
                             $playerName = null;
                             $heroName = null;
@@ -663,8 +669,17 @@ class MatchPlayerAssignmentController extends Controller
                                 if (isset($pick['hero']) && isset($pick['lane'])) {
                                     $heroName = $pick['hero'];
                                     $role = $pick['lane'];
-                                    // Map role to actual player name
+                                    // Direct mapping: hero in EXP lane → EXP lane player
+                                    // hero in MID lane → MID lane player, etc.
                                     $playerName = $roleToPlayerMap[strtolower($role)] ?? null;
+                                    
+                                    Log::info('Hero to Player Mapping', [
+                                        'match_id' => $match->id,
+                                        'hero' => $heroName,
+                                        'lane' => $role,
+                                        'mapped_player' => $playerName,
+                                        'available_roles' => array_keys($roleToPlayerMap)
+                                    ]);
                                 }
                             } elseif (is_string($pick)) {
                                 $heroName = $pick;
@@ -672,6 +687,14 @@ class MatchPlayerAssignmentController extends Controller
                                 $laneOrder = ['exp', 'mid', 'jungler', 'gold', 'roam'];
                                 $role = $laneOrder[$index] ?? 'unknown';
                                 $playerName = $roleToPlayerMap[strtolower($role)] ?? null;
+                                
+                                Log::info('String Hero to Player Mapping', [
+                                    'match_id' => $match->id,
+                                    'hero' => $heroName,
+                                    'index' => $index,
+                                    'lane' => $role,
+                                    'mapped_player' => $playerName
+                                ]);
                             }
                             
                             // Only add if this player doesn't have an edited assignment and we found a valid player name
@@ -682,6 +705,21 @@ class MatchPlayerAssignmentController extends Controller
                                     'role' => $role,
                                     'is_edited' => false
                                 ];
+                                
+                                Log::info('Successfully Mapped Hero to Player', [
+                                    'match_id' => $match->id,
+                                    'player' => $playerName,
+                                    'hero' => $heroName,
+                                    'lane' => $role
+                                ]);
+                            } else {
+                                Log::warning('Failed to Map Hero to Player', [
+                                    'match_id' => $match->id,
+                                    'hero' => $heroName,
+                                    'lane' => $role,
+                                    'playerName' => $playerName,
+                                    'already_exists' => isset($matchPlayers[$playerName])
+                                ]);
                             }
                         }
                         break;
@@ -823,7 +861,8 @@ class MatchPlayerAssignmentController extends Controller
                             if (isset($pick['hero']) && isset($pick['lane'])) {
                                 $heroName = $pick['hero'];
                                 $role = $pick['lane'];
-                                // Map role to actual player name
+                                // Direct mapping: hero in EXP lane → EXP lane player
+                                // hero in MID lane → MID lane player, etc.
                                 $playerName = $roleToPlayerMap[strtolower($role)] ?? null;
                             }
                         } elseif (is_string($pick)) {
@@ -843,7 +882,7 @@ class MatchPlayerAssignmentController extends Controller
                                 'is_edited' => false
                             ];
                             
-                            Log::info('Added fresh match player', [
+                            Log::info('H2H - Added fresh match player', [
                                 'player_name' => $playerName,
                                 'hero_name' => $heroName,
                                 'role' => $role,
