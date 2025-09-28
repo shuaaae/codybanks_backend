@@ -329,10 +329,10 @@ class GameMatchController extends Controller
             'teams'                    => ['required','array','size:2'],
             'teams.*.team'             => ['required','string'],
             'teams.*.team_color'       => ['required','in:blue,red'],
-            'teams.*.banning_phase1'   => ['required','array'],
-            'teams.*.banning_phase2'   => ['required','array'],
-            'teams.*.picks1'           => ['required','array'],
-            'teams.*.picks2'           => ['required','array'],
+            'teams.*.banning_phase1'   => ['nullable','array'],
+            'teams.*.banning_phase2'   => ['nullable','array'],
+            'teams.*.picks1'           => ['nullable','array'],
+            'teams.*.picks2'           => ['nullable','array'],
         ]);
 
         return DB::transaction(function () use ($match, $validated) {
@@ -366,19 +366,31 @@ class GameMatchController extends Controller
             // Recreate children
             $match->teams()->delete();
             foreach ($validated['teams'] as $t) {
+                // Ensure all array fields have default values
+                $teamData = [
+                    'match_id' => $match->id,
+                    'team' => $t['team'],
+                    'team_color' => $t['team_color'],
+                    'banning_phase1' => $t['banning_phase1'] ?? [],
+                    'banning_phase2' => $t['banning_phase2'] ?? [],
+                    'picks1' => $t['picks1'] ?? [],
+                    'picks2' => $t['picks2'] ?? [],
+                ];
+                
                 // Log each team being created
                 \Log::info('Creating updated match team', [
                     'match_id' => $match->id,
-                    'team_name' => $t['team'],
-                    'team_color' => $t['team_color'],
-                    'picks1_count' => count($t['picks1'] ?? []),
-                    'picks2_count' => count($t['picks2'] ?? []),
-                    'picks1_sample' => array_slice($t['picks1'] ?? [], 0, 2),
-                    'picks2_sample' => array_slice($t['picks2'] ?? [], 0, 2),
+                    'team_name' => $teamData['team'],
+                    'team_color' => $teamData['team_color'],
+                    'banning_phase1_count' => count($teamData['banning_phase1']),
+                    'banning_phase2_count' => count($teamData['banning_phase2']),
+                    'picks1_count' => count($teamData['picks1']),
+                    'picks2_count' => count($teamData['picks2']),
+                    'picks1_sample' => array_slice($teamData['picks1'], 0, 2),
+                    'picks2_sample' => array_slice($teamData['picks2'], 0, 2),
                 ]);
                 
-                $t['match_id'] = $match->id;
-                MatchTeam::create($t);
+                MatchTeam::create($teamData);
             }
 
             // DO NOT sync all hero assignments - this corrupts the original match picks data
