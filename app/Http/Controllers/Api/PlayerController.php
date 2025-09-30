@@ -359,9 +359,12 @@ class PlayerController extends Controller
             return response()->json([]);
         }
         
-        // NEW APPROACH: Use MatchPlayerAssignment to get player-specific hero data
-        // This ensures we only get data for the specific player, not just any player with the same role
+        // HYBRID APPROACH: Use MatchPlayerAssignment first, then fallback to match picks data
+        // This ensures we get data from all matches, even if player assignments don't have hero names
+        
+        // First, try to get data from player assignments with hero names
         $playerAssignments = \App\Models\MatchPlayerAssignment::where('player_id', $player->id)
+            ->where('role', $player->role) // CRITICAL: Only include assignments for the player's actual role
             ->whereHas('match', function($query) use ($activeTeamId, $matchType) {
                 $query->where('team_id', $activeTeamId)
                       ->where('match_type', $matchType);
@@ -372,7 +375,7 @@ class PlayerController extends Controller
             }])
             ->get();
             
-        \Log::info("Found player assignments for hero stats", [
+        \Log::info("Found player assignments with hero names", [
             'playerId' => $player->id,
             'playerName' => $playerName,
             'assignmentsCount' => $playerAssignments->count(),
@@ -380,7 +383,9 @@ class PlayerController extends Controller
         ]);
         
         $heroStats = [];
+        $processedMatchIds = [];
 
+        // Process assignments with hero names
         foreach ($playerAssignments as $assignment) {
             $match = $assignment->match;
             if (!$match) continue;
@@ -404,6 +409,8 @@ class PlayerController extends Controller
                 $heroStats[$hero]['lose']++;
             }
             
+            $processedMatchIds[] = $match->id;
+            
             // Log successful match for debugging
             \Log::info("Player assignment stats found", [
                 'playerName' => $playerName,
@@ -415,6 +422,76 @@ class PlayerController extends Controller
                 'winner' => $match->winner,
                 'teamName' => $teamName,
                 'is_starting_lineup' => $assignment->is_starting_lineup
+            ]);
+        }
+        
+        // FALLBACK: Get data from matches where player assignments don't have hero names
+        // This ensures we capture all match data, even from older exports
+        $fallbackMatches = \App\Models\GameMatch::where('team_id', $activeTeamId)
+            ->where('match_type', $matchType)
+            ->whereNotIn('id', $processedMatchIds)
+            ->with('teams')
+            ->get();
+            
+        \Log::info("Processing fallback matches for hero stats", [
+            'playerId' => $player->id,
+            'playerName' => $playerName,
+            'fallbackMatchesCount' => $fallbackMatches->count(),
+            'processedMatchIds' => $processedMatchIds
+        ]);
+        
+        foreach ($fallbackMatches as $match) {
+            // Find the team's match team data
+            $matchTeam = $match->teams->first(function($team) use ($teamName) {
+                return $team->team === $teamName;
+            });
+            
+            if (!$matchTeam) continue;
+            
+            // Get picks data and find hero for this player's role
+            $picks = array_merge($matchTeam->picks1 ?? [], $matchTeam->picks2 ?? []);
+            
+            // Find the pick for this player's role
+            $playerPick = null;
+            foreach ($picks as $pick) {
+                if (is_array($pick) && isset($pick['lane']) && isset($pick['hero'])) {
+                    if (strtolower($pick['lane']) === strtolower($player->role)) {
+                        $playerPick = $pick;
+                        break;
+                    }
+                }
+            }
+            
+            if (!$playerPick || !$playerPick['hero']) {
+                \Log::debug("No hero found for role {$player->role} in fallback match {$match->id}");
+                continue;
+            }
+            
+            // Determine if this was a win or loss
+            $isWin = $match->winner === $teamName;
+            $hero = $playerPick['hero'];
+            
+            if (!isset($heroStats[$hero])) {
+                $heroStats[$hero] = ['win' => 0, 'lose' => 0, 'total' => 0];
+            }
+            $heroStats[$hero]['total']++;
+            if ($isWin) {
+                $heroStats[$hero]['win']++;
+            } else {
+                $heroStats[$hero]['lose']++;
+            }
+            
+            // Log successful fallback match for debugging
+            \Log::info("Fallback match stats found", [
+                'playerName' => $playerName,
+                'playerId' => $player->id,
+                'role' => $player->role,
+                'hero' => $hero,
+                'match_id' => $match->id,
+                'is_win' => $isWin,
+                'winner' => $match->winner,
+                'teamName' => $teamName,
+                'dataSource' => 'fallback_picks'
             ]);
         }
         
@@ -483,9 +560,12 @@ class PlayerController extends Controller
             return response()->json([]);
         }
         
-        // NEW APPROACH: Use MatchPlayerAssignment to get player-specific hero data
-        // This ensures we only get data for the specific player, not just any player with the same role
+        // HYBRID APPROACH: Use MatchPlayerAssignment first, then fallback to match picks data
+        // This ensures we get H2H data from all matches, even if player assignments don't have hero names
+        
+        // First, try to get data from player assignments with hero names
         $playerAssignments = \App\Models\MatchPlayerAssignment::where('player_id', $player->id)
+            ->where('role', $player->role) // CRITICAL: Only include assignments for the player's actual role
             ->whereHas('match', function($query) use ($activeTeamId, $matchType) {
                 $query->where('team_id', $activeTeamId)
                       ->where('match_type', $matchType);
@@ -496,7 +576,7 @@ class PlayerController extends Controller
             }])
             ->get();
             
-        \Log::info("Found player assignments for H2H stats", [
+        \Log::info("Found player assignments with hero names for H2H stats", [
             'playerId' => $player->id,
             'playerName' => $playerName,
             'assignmentsCount' => $playerAssignments->count(),
@@ -504,7 +584,9 @@ class PlayerController extends Controller
         ]);
         
         $h2hStats = [];
+        $processedMatchIds = [];
 
+        // Process assignments with hero names
         foreach ($playerAssignments as $assignment) {
             $match = $assignment->match;
             if (!$match) continue;
@@ -568,6 +650,8 @@ class PlayerController extends Controller
                 $h2hStats[$key]['lose']++;
             }
             
+            $processedMatchIds[] = $match->id;
+            
             // Log successful H2H match for debugging
             \Log::info("H2H Player assignment stats found", [
                 'playerName' => $playerName,
@@ -580,6 +664,107 @@ class PlayerController extends Controller
                 'winner' => $match->winner,
                 'teamName' => $teamName,
                 'is_starting_lineup' => $assignment->is_starting_lineup
+            ]);
+        }
+        
+        // FALLBACK: Get H2H data from matches where player assignments don't have hero names
+        $fallbackMatches = \App\Models\GameMatch::where('team_id', $activeTeamId)
+            ->where('match_type', $matchType)
+            ->whereNotIn('id', $processedMatchIds)
+            ->with('teams')
+            ->get();
+            
+        \Log::info("Processing fallback matches for H2H stats", [
+            'playerId' => $player->id,
+            'playerName' => $playerName,
+            'fallbackMatchesCount' => $fallbackMatches->count(),
+            'processedMatchIds' => $processedMatchIds
+        ]);
+        
+        foreach ($fallbackMatches as $match) {
+            // Find the team's match team data
+            $matchTeam = $match->teams->first(function($team) use ($teamName) {
+                return $team->team === $teamName;
+            });
+            
+            if (!$matchTeam) continue;
+            
+            // Find the enemy team in the same match
+            $enemyTeam = $match->teams->first(function($team) use ($teamName) {
+                return $team->team !== $teamName;
+            });
+            if (!$enemyTeam) continue;
+            
+            // Get picks data and find hero for this player's role
+            $picks = array_merge($matchTeam->picks1 ?? [], $matchTeam->picks2 ?? []);
+            $enemyPicks = array_merge($enemyTeam->picks1 ?? [], $enemyTeam->picks2 ?? []);
+            
+            // Find the pick for this player's role
+            $playerPick = null;
+            foreach ($picks as $pick) {
+                if (is_array($pick) && isset($pick['lane']) && isset($pick['hero'])) {
+                    if (strtolower($pick['lane']) === strtolower($player->role)) {
+                        $playerPick = $pick;
+                        break;
+                    }
+                }
+            }
+            
+            if (!$playerPick || !$playerPick['hero']) {
+                \Log::debug("No player hero found for role {$player->role} in fallback H2H match {$match->id}");
+                continue;
+            }
+            
+            // Find enemy hero in the same lane
+            $enemyHero = null;
+            foreach ($enemyPicks as $ep) {
+                if (is_array($ep) && isset($ep['hero']) && isset($ep['lane'])) {
+                    if (strtolower($ep['lane']) === strtolower($player->role)) {
+                        $enemyHero = $ep['hero'];
+                        break;
+                    }
+                }
+            }
+            
+            if (!$enemyHero) {
+                \Log::debug("No enemy hero found for role {$player->role} in fallback H2H match {$match->id}");
+                continue;
+            }
+            
+            // Determine if this was a win or loss
+            $isWin = $match->winner === $teamName;
+            $playerHero = $playerPick['hero'];
+            
+            $key = $playerHero . ' vs ' . $enemyHero;
+            
+            if (!isset($h2hStats[$key])) {
+                $h2hStats[$key] = [
+                    'player_hero' => $playerHero,
+                    'enemy_hero' => $enemyHero,
+                    'win' => 0,
+                    'lose' => 0,
+                    'total' => 0
+                ];
+            }
+            $h2hStats[$key]['total']++;
+            if ($isWin) {
+                $h2hStats[$key]['win']++;
+            } else {
+                $h2hStats[$key]['lose']++;
+            }
+            
+            // Log successful fallback H2H match for debugging
+            \Log::info("Fallback H2H match stats found", [
+                'playerName' => $playerName,
+                'playerId' => $player->id,
+                'role' => $player->role,
+                'playerHero' => $playerHero,
+                'enemyHero' => $enemyHero,
+                'match_id' => $match->id,
+                'is_win' => $isWin,
+                'winner' => $match->winner,
+                'teamName' => $teamName,
+                'dataSource' => 'fallback_picks'
             ]);
         }
         
