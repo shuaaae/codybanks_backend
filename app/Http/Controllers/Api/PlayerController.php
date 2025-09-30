@@ -337,9 +337,6 @@ class PlayerController extends Controller
         $role = $request->query('role'); // Get role parameter for unique player identification
         $matchType = $request->query('match_type', 'scrim'); // Get match type parameter, default to scrim
         
-        // Handle 'both' match type to include both scrim and tournament matches
-        $matchTypes = $matchType === 'both' ? ['scrim', 'tournament'] : [$matchType];
-        
         // Debug logging
         \Log::info("Player stats request", [
             'playerName' => $playerName,
@@ -368,9 +365,9 @@ class PlayerController extends Controller
         // First, try to get data from player assignments with hero names
         $playerAssignments = \App\Models\MatchPlayerAssignment::where('player_id', $player->id)
             ->where('role', $player->role) // CRITICAL: Only include assignments for the player's actual role
-            ->whereHas('match', function($query) use ($activeTeamId, $matchTypes) {
+            ->whereHas('match', function($query) use ($activeTeamId, $matchType) {
                 $query->where('team_id', $activeTeamId)
-                      ->whereIn('match_type', $matchTypes);
+                      ->where('match_type', $matchType);
             })
             ->whereNotNull('hero_name') // Only include assignments with hero data
             ->with(['match' => function($query) use ($teamName) {
@@ -432,9 +429,9 @@ class PlayerController extends Controller
         // BUT ONLY for matches where this specific player was actually assigned to play
         $fallbackAssignments = \App\Models\MatchPlayerAssignment::where('player_id', $player->id)
             ->where('role', $player->role) // CRITICAL: Only assignments for this player's role
-            ->whereHas('match', function($query) use ($activeTeamId, $matchTypes) {
+            ->whereHas('match', function($query) use ($activeTeamId, $matchType) {
                 $query->where('team_id', $activeTeamId)
-                      ->whereIn('match_type', $matchTypes);
+                      ->where('match_type', $matchType);
             })
             ->whereNull('hero_name') // Only assignments WITHOUT hero names
             ->whereNotIn('match_id', $processedMatchIds) // Don't process matches we already handled
@@ -581,9 +578,9 @@ class PlayerController extends Controller
         // First, try to get data from player assignments with hero names
         $playerAssignments = \App\Models\MatchPlayerAssignment::where('player_id', $player->id)
             ->where('role', $player->role) // CRITICAL: Only include assignments for the player's actual role
-            ->whereHas('match', function($query) use ($activeTeamId, $matchTypes) {
+            ->whereHas('match', function($query) use ($activeTeamId, $matchType) {
                 $query->where('team_id', $activeTeamId)
-                      ->whereIn('match_type', $matchTypes);
+                      ->where('match_type', $matchType);
             })
             ->whereNotNull('hero_name') // Only include assignments with hero data
             ->with(['match.teams' => function($query) {
@@ -686,9 +683,9 @@ class PlayerController extends Controller
         // BUT ONLY for matches where this specific player was actually assigned to play
         $fallbackAssignments = \App\Models\MatchPlayerAssignment::where('player_id', $player->id)
             ->where('role', $player->role) // CRITICAL: Only assignments for this player's role
-            ->whereHas('match', function($query) use ($activeTeamId, $matchTypes) {
+            ->whereHas('match', function($query) use ($activeTeamId, $matchType) {
                 $query->where('team_id', $activeTeamId)
-                      ->whereIn('match_type', $matchTypes);
+                      ->where('match_type', $matchType);
             })
             ->whereNull('hero_name') // Only assignments WITHOUT hero names
             ->whereNotIn('match_id', $processedMatchIds) // Don't process matches we already handled
