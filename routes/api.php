@@ -507,6 +507,7 @@ Route::delete('/players/{id}', [PlayerController::class, 'destroy']);
 Route::get('/players/{playerName}/hero-stats', [PlayerController::class, 'heroStats']);
 Route::get('/players/{playerName}/hero-stats-by-team', [PlayerController::class, 'heroStatsByTeam']);
 Route::get('/players/{playerName}/hero-h2h-stats-by-team', [PlayerController::class, 'heroH2HStatsByTeam']);
+Route::get('/players/{playerName}/debug-h2h', [PlayerController::class, 'debugPlayerH2H']);
 
 // Team routes (with session support)
 Route::middleware('enable-sessions')->group(function () {

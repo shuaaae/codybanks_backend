@@ -627,18 +627,61 @@ class PlayerController extends Controller
             $enemyPicks = array_merge($enemyTeam->picks1 ?? [], $enemyTeam->picks2 ?? []);
             $enemyHero = null;
             
+            \Log::info("H2H Debug - Looking for enemy hero", [
+                'match_id' => $match->id,
+                'playerName' => $playerName,
+                'playerRole' => $assignment->role,
+                'enemyTeam' => $enemyTeam->team,
+                'enemyPicksCount' => count($enemyPicks),
+                'enemyPicks' => $enemyPicks
+            ]);
+            
             foreach ($enemyPicks as $ep) {
                 if (is_array($ep) && isset($ep['hero']) && isset($ep['lane'])) {
+                    \Log::info("H2H Debug - Checking enemy pick", [
+                        'enemyLane' => $ep['lane'],
+                        'playerRole' => $assignment->role,
+                        'laneMatch' => strtolower($ep['lane']) === strtolower($assignment->role),
+                        'enemyHero' => $ep['hero']
+                    ]);
+                    
                     if (strtolower($ep['lane']) === strtolower($assignment->role)) {
                         $enemyHero = $ep['hero'];
+                        \Log::info("H2H Debug - Found enemy hero match", [
+                            'enemyHero' => $enemyHero,
+                            'playerHero' => $playerHero,
+                            'lane' => $ep['lane']
+                        ]);
                         break;
                     }
                 }
             }
             
             if (!$enemyHero) {
-                \Log::debug("No enemy hero found for role {$assignment->role} in match {$match->id}");
-                continue;
+                // FALLBACK: If no exact lane match, try to find any hero in enemy picks
+                // This handles cases where enemy team structure might be different
+                if (!empty($enemyPicks)) {
+                    $firstEnemyPick = $enemyPicks[0];
+                    if (is_array($firstEnemyPick) && isset($firstEnemyPick['hero'])) {
+                        $enemyHero = $firstEnemyPick['hero'];
+                        \Log::info("H2H Debug - Using fallback enemy hero (first available)", [
+                            'enemyHero' => $enemyHero,
+                            'playerHero' => $playerHero,
+                            'match_id' => $match->id,
+                            'fallbackReason' => 'No exact lane match found'
+                        ]);
+                    }
+                }
+                
+                if (!$enemyHero) {
+                    \Log::warning("No enemy hero found for role {$assignment->role} in match {$match->id}", [
+                        'playerName' => $playerName,
+                        'playerRole' => $assignment->role,
+                        'enemyPicks' => $enemyPicks,
+                        'match_id' => $match->id
+                    ]);
+                    continue;
+                }
             }
             
             // Determine if this was a win or loss
@@ -740,18 +783,62 @@ class PlayerController extends Controller
             
             // Find enemy hero in the same lane
             $enemyHero = null;
+            
+            \Log::info("H2H Fallback Debug - Looking for enemy hero", [
+                'match_id' => $match->id,
+                'playerName' => $playerName,
+                'playerRole' => $player->role,
+                'enemyTeam' => $enemyTeam->team,
+                'enemyPicksCount' => count($enemyPicks),
+                'enemyPicks' => $enemyPicks
+            ]);
+            
             foreach ($enemyPicks as $ep) {
                 if (is_array($ep) && isset($ep['hero']) && isset($ep['lane'])) {
+                    \Log::info("H2H Fallback Debug - Checking enemy pick", [
+                        'enemyLane' => $ep['lane'],
+                        'playerRole' => $player->role,
+                        'laneMatch' => strtolower($ep['lane']) === strtolower($player->role),
+                        'enemyHero' => $ep['hero']
+                    ]);
+                    
                     if (strtolower($ep['lane']) === strtolower($player->role)) {
                         $enemyHero = $ep['hero'];
+                        \Log::info("H2H Fallback Debug - Found enemy hero match", [
+                            'enemyHero' => $enemyHero,
+                            'playerHero' => $playerHero,
+                            'lane' => $ep['lane']
+                        ]);
                         break;
                     }
                 }
             }
             
             if (!$enemyHero) {
-                \Log::debug("No enemy hero found for role {$player->role} in fallback H2H match {$match->id} for player {$playerName}");
-                continue;
+                // FALLBACK: If no exact lane match, try to find any hero in enemy picks
+                // This handles cases where enemy team structure might be different
+                if (!empty($enemyPicks)) {
+                    $firstEnemyPick = $enemyPicks[0];
+                    if (is_array($firstEnemyPick) && isset($firstEnemyPick['hero'])) {
+                        $enemyHero = $firstEnemyPick['hero'];
+                        \Log::info("H2H Fallback Debug - Using fallback enemy hero (first available)", [
+                            'enemyHero' => $enemyHero,
+                            'playerHero' => $playerHero,
+                            'match_id' => $match->id,
+                            'fallbackReason' => 'No exact lane match found'
+                        ]);
+                    }
+                }
+                
+                if (!$enemyHero) {
+                    \Log::warning("No enemy hero found for role {$player->role} in fallback H2H match {$match->id} for player {$playerName}", [
+                        'playerName' => $playerName,
+                        'playerRole' => $player->role,
+                        'enemyPicks' => $enemyPicks,
+                        'match_id' => $match->id
+                    ]);
+                    continue;
+                }
             }
             
             // Determine if this was a win or loss
@@ -830,6 +917,87 @@ class PlayerController extends Controller
         ]);
     }
     
+    /**
+     * Debug endpoint to inspect H2H data for a specific player
+     */
+    public function debugPlayerH2H(Request $request, $playerName)
+    {
+        $activeTeamId = session('active_team_id');
+        if (!$activeTeamId) {
+            $activeTeamId = $request->header('X-Active-Team-ID');
+        }
+        
+        if (!$activeTeamId) {
+            return response()->json(['error' => 'No active team found'], 404);
+        }
+        
+        $teamName = $request->query('teamName');
+        $role = $request->query('role');
+        $matchType = $request->query('match_type', 'scrim');
+        
+        // Find the player
+        $player = \App\Models\Player::where('name', $playerName)
+            ->where('team_id', $activeTeamId)
+            ->first();
+            
+        if (!$player) {
+            return response()->json(['error' => 'Player not found'], 404);
+        }
+        
+        // Get player assignments
+        $assignments = \App\Models\MatchPlayerAssignment::where('player_id', $player->id)
+            ->where('role', $player->role)
+            ->whereHas('match', function($query) use ($activeTeamId, $matchType) {
+                $query->where('team_id', $activeTeamId)
+                      ->where('match_type', $matchType);
+            })
+            ->with(['match.teams'])
+            ->get();
+            
+        $debugData = [];
+        foreach ($assignments as $assignment) {
+            $match = $assignment->match;
+            if (!$match) continue;
+            
+            $ourTeam = $match->teams->first(function($team) use ($teamName) {
+                return $team->team === $teamName;
+            });
+            
+            $enemyTeam = $match->teams->first(function($team) use ($teamName) {
+                return $team->team !== $teamName;
+            });
+            
+            $matchData = [
+                'match_id' => $match->id,
+                'assignment_id' => $assignment->id,
+                'hero_name' => $assignment->hero_name,
+                'role' => $assignment->role,
+                'winner' => $match->winner,
+                'our_team' => $ourTeam ? [
+                    'name' => $ourTeam->team,
+                    'picks1' => $ourTeam->picks1,
+                    'picks2' => $ourTeam->picks2
+                ] : null,
+                'enemy_team' => $enemyTeam ? [
+                    'name' => $enemyTeam->team,
+                    'picks1' => $enemyTeam->picks1,
+                    'picks2' => $enemyTeam->picks2
+                ] : null
+            ];
+            
+            $debugData[] = $matchData;
+        }
+        
+        return response()->json([
+            'playerName' => $playerName,
+            'playerId' => $player->id,
+            'role' => $role,
+            'activeTeamId' => $activeTeamId,
+            'assignmentsCount' => $assignments->count(),
+            'matches' => $debugData
+        ]);
+    }
+
     /**
      * Debug endpoint to inspect match data for a specific player
      */
