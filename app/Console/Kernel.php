@@ -15,6 +15,7 @@ class Kernel extends ConsoleKernel
     protected $commands = [
         // Register your custom commands here
         \App\Console\Commands\GenerateHeroSeed::class,
+        \App\Console\Commands\PopulateMissingPlayerAssignments::class,
     ];
 
     /**
