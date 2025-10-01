@@ -346,15 +346,17 @@ class PlayerController extends Controller
             'matchType' => $matchType
         ]);
         
-        // Find the player in the team
+        // Find the player in the team - use both name and role for unique identification
         $player = \App\Models\Player::where('name', $playerName)
             ->where('team_id', $activeTeamId)
+            ->where('role', $role) // CRITICAL: Also filter by role to ensure unique player
             ->first();
             
         if (!$player) {
             \Log::warning("Player not found in team", [
                 'playerName' => $playerName,
-                'activeTeamId' => $activeTeamId
+                'activeTeamId' => $activeTeamId,
+                'role' => $role
             ]);
             return response()->json([]);
         }
@@ -681,15 +683,17 @@ class PlayerController extends Controller
             'matchType' => $matchType
         ]);
         
-        // Find the player in the team
+        // Find the player in the team - use both name and role for unique identification
         $player = \App\Models\Player::where('name', $playerName)
             ->where('team_id', $activeTeamId)
+            ->where('role', $role) // CRITICAL: Also filter by role to ensure unique player
             ->first();
             
         if (!$player) {
             \Log::warning("Player not found in team for H2H stats", [
                 'playerName' => $playerName,
-                'activeTeamId' => $activeTeamId
+                'activeTeamId' => $activeTeamId,
+                'role' => $role
             ]);
             return response()->json([]);
         }
@@ -921,6 +925,106 @@ class PlayerController extends Controller
             $rate = $stat['total'] > 0 ? round($stat['win'] / $stat['total'] * 100) : 0;
             $result[] = array_merge($stat, ['winrate' => $rate]);
         }
+        
+        // TOURNAMENT FALLBACK: If no assignments found, try to get H2H data directly from match picks
+        if ($matchType === 'tournament' && $fallbackAssignments->count() === 0 && $playerAssignments->count() === 0) {
+            \Log::info("DEBUG: No player assignments found for tournament H2H, trying direct match picks approach");
+            
+            // Get tournament matches for this team
+            $tournamentMatches = \App\Models\GameMatch::where('team_id', $activeTeamId)
+                ->where('match_type', 'tournament')
+                ->with(['teams' => function($query) use ($teamName) {
+                    $query->where('team', $teamName)
+                          ->select('id', 'match_id', 'team', 'picks1', 'picks2');
+                }])
+                ->get();
+                
+            \Log::info("DEBUG: Direct tournament matches approach for H2H", [
+                'tournamentMatchesCount' => $tournamentMatches->count(),
+                'matchIds' => $tournamentMatches->pluck('id')->toArray()
+            ]);
+            
+            // Process each tournament match directly for H2H
+            foreach ($tournamentMatches as $match) {
+                $matchTeam = $match->teams->first();
+                if (!$matchTeam) continue;
+                
+                // Find the enemy team in the same match
+                $enemyTeam = $match->teams->first(function($team) use ($teamName) {
+                    return $team->team !== $teamName;
+                });
+                if (!$enemyTeam) continue;
+                
+                // Get picks data and find hero for this player's role
+                $picks = array_merge($matchTeam->picks1 ?? [], $matchTeam->picks2 ?? []);
+                $enemyPicks = array_merge($enemyTeam->picks1 ?? [], $enemyTeam->picks2 ?? []);
+                
+                // Find the pick for this player's role
+                $playerPick = null;
+                foreach ($picks as $pick) {
+                    if (is_array($pick) && isset($pick['lane']) && isset($pick['hero'])) {
+                        if (strtolower($pick['lane']) === strtolower($player->role)) {
+                            $playerPick = $pick;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!$playerPick || !$playerPick['hero']) {
+                    \Log::debug("No hero found for role {$player->role} in tournament match {$match->id} for player {$playerName} H2H");
+                    continue;
+                }
+                
+                // Find enemy hero in the same lane
+                $enemyHero = null;
+                foreach ($enemyPicks as $ep) {
+                    if (is_array($ep) && isset($ep['hero']) && isset($ep['lane'])) {
+                        if (strtolower($ep['lane']) === strtolower($player->role)) {
+                            $enemyHero = $ep['hero'];
+                            break;
+                        }
+                    }
+                }
+                
+                if (!$enemyHero) {
+                    \Log::debug("No enemy hero found for role {$player->role} in tournament match {$match->id} for player {$playerName} H2H");
+                    continue;
+                }
+                
+                // Determine if this was a win or loss
+                $isWin = $match->winner === $teamName;
+                $playerHero = $playerPick['hero'];
+                
+                $key = $playerHero . ' vs ' . $enemyHero;
+                
+                if (!isset($h2hStats[$key])) {
+                    $h2hStats[$key] = [
+                        'player_hero' => $playerHero,
+                        'enemy_hero' => $enemyHero,
+                        'win' => 0,
+                        'lose' => 0,
+                        'total' => 0
+                    ];
+                }
+                $h2hStats[$key]['total']++;
+                if ($isWin) {
+                    $h2hStats[$key]['win']++;
+                } else {
+                    $h2hStats[$key]['lose']++;
+                }
+                
+                \Log::info("DEBUG: Direct tournament match processed for H2H", [
+                    'playerName' => $playerName,
+                    'matchId' => $match->id,
+                    'playerHero' => $playerHero,
+                    'enemyHero' => $enemyHero,
+                    'isWin' => $isWin,
+                    'winner' => $match->winner,
+                    'teamName' => $teamName
+                ]);
+            }
+        }
+        
         // Sort by total desc
         usort($result, function($a, $b) { return $b['total'] <=> $a['total']; });
         
