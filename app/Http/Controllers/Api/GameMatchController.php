@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\GameMatch;
 use App\Models\MatchTeam;
 use App\Services\MatchHeroSyncService;
+use App\Services\StatisticsSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -204,6 +205,19 @@ class GameMatchController extends Controller
                 if (isset($validated['player_assignments']['red']) && is_array($validated['player_assignments']['red'])) {
                     $this->processPlayerAssignments($match->id, $currentTeamId, $validated['player_assignments']['red'], 'red');
                 }
+            }
+
+            // Automatically sync statistics to dedicated tables
+            try {
+                $syncService = new StatisticsSyncService();
+                $syncService->syncMatchStatistics($match);
+                \Log::info('Statistics synced for new match', ['match_id' => $match->id]);
+            } catch (\Exception $e) {
+                \Log::error('Failed to sync statistics for new match', [
+                    'match_id' => $match->id,
+                    'error' => $e->getMessage()
+                ]);
+                // Don't fail the match creation if statistics sync fails
             }
 
             return response()->json(['message' => 'Match and teams saved successfully.'], 201);
