@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Player;
+use App\Models\HeroSuccessRate;
+use App\Models\H2HStatistics;
 use Illuminate\Support\Facades\DB;
 
 class PlayerController extends Controller
@@ -1668,6 +1670,79 @@ class PlayerController extends Controller
             }
             
             return response()->json(['error' => 'Failed to hard delete player: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Get hero success rate statistics using dedicated table
+     */
+    public function getHeroSuccessRateStats($playerId, $teamId, $matchType = 'scrim')
+    {
+        try {
+            $heroStats = HeroSuccessRate::where('player_id', $playerId)
+                ->where('team_id', $teamId)
+                ->where('match_type', $matchType)
+                ->selectRaw('hero_name, 
+                    SUM(CASE WHEN is_win = 1 THEN 1 ELSE 0 END) as win,
+                    SUM(CASE WHEN is_win = 0 THEN 1 ELSE 0 END) as lose,
+                    COUNT(*) as total')
+                ->groupBy('hero_name')
+                ->get()
+                ->map(function ($stat) {
+                    $rate = $stat->total > 0 ? round($stat->win / $stat->total * 100) : 0;
+                    return [
+                        'hero' => $stat->hero_name,
+                        'win' => $stat->win,
+                        'lose' => $stat->lose,
+                        'total' => $stat->total,
+                        'success_rate' => $rate
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'hero_stats' => $heroStats
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting hero success rate stats: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to get hero success rate stats'], 500);
+        }
+    }
+
+    /**
+     * Get H2H statistics using dedicated table
+     */
+    public function getH2HStats($playerId, $teamId, $matchType = 'scrim')
+    {
+        try {
+            $h2hStats = H2HStatistics::where('player_id', $playerId)
+                ->where('team_id', $teamId)
+                ->where('match_type', $matchType)
+                ->selectRaw('hero_used, enemy_hero,
+                    SUM(CASE WHEN is_win = 1 THEN 1 ELSE 0 END) as win,
+                    SUM(CASE WHEN is_win = 0 THEN 1 ELSE 0 END) as lose,
+                    COUNT(*) as total')
+                ->groupBy('hero_used', 'enemy_hero')
+                ->get()
+                ->map(function ($stat) {
+                    $rate = $stat->total > 0 ? round($stat->win / $stat->total * 100) : 0;
+                    return [
+                        'hero_used' => $stat->hero_used,
+                        'enemy_hero' => $stat->enemy_hero,
+                        'win' => $stat->win,
+                        'lose' => $stat->lose,
+                        'total' => $stat->total,
+                        'success_rate' => $rate
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'h2h_stats' => $h2hStats
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting H2H stats: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to get H2H stats'], 500);
         }
     }
 }

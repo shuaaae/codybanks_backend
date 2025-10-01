@@ -508,6 +508,10 @@ Route::get('/players/{playerName}/hero-stats', [PlayerController::class, 'heroSt
 Route::get('/players/{playerName}/hero-stats-by-team', [PlayerController::class, 'heroStatsByTeam']);
 Route::get('/players/{playerName}/hero-h2h-stats-by-team', [PlayerController::class, 'heroH2HStatsByTeam']);
 
+// New dedicated statistics routes
+Route::get('/players/{playerId}/hero-success-rate/{teamId}/{matchType}', [PlayerController::class, 'getHeroSuccessRateStats']);
+Route::get('/players/{playerId}/h2h-stats/{teamId}/{matchType}', [PlayerController::class, 'getH2HStats']);
+
 // Team routes (with session support)
 Route::middleware('enable-sessions')->group(function () {
     // Matches endpoints (moved here to access session data)
