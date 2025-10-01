@@ -550,8 +550,26 @@ class PlayerController extends Controller
                 
                 // Find the team that matches our team name OR the winner
                 $matchTeam = $match->teams->first(function($team) use ($teamName, $match) {
-                    return $team->team === $teamName || $team->team === $match->winner;
+                    return $team->team === $teamName || 
+                           $team->team === $match->winner;
                 });
+                
+                // If no exact match, we need to determine which team is ours
+                // Since the match has team_id = our activeTeamId, we can use that to identify our team
+                if (!$matchTeam) {
+                    // For tournament matches, we know this match belongs to our team_id
+                    // So we need to find which team in the match is ours
+                    // We'll use the team name from our team record as the primary identifier
+                    $ourTeamName = \App\Models\Team::find($activeTeamId)->name ?? $teamName;
+                    $matchTeam = $match->teams->first(function($team) use ($ourTeamName) {
+                        return $team->team === $ourTeamName;
+                    });
+                    
+                    // If still no match, take the first team (this is a fallback)
+                    if (!$matchTeam) {
+                        $matchTeam = $match->teams->first();
+                    }
+                }
                 
                 if (!$matchTeam) {
                     \Log::debug("No matching team found for match {$match->id}, teams: " . json_encode($match->teams->pluck('team')->toArray()));
@@ -560,6 +578,13 @@ class PlayerController extends Controller
                 
                 // Get picks data and find hero for this player's role
                 $picks = array_merge($matchTeam->picks1 ?? [], $matchTeam->picks2 ?? []);
+                
+                \Log::info("DEBUG: Processing picks for hero stats", [
+                    'matchId' => $match->id,
+                    'ourTeam' => $matchTeam->team,
+                    'picks' => $picks,
+                    'playerRole' => $role
+                ]);
                 
                 // Find the pick for this player's role
                 $playerPick = null;
@@ -994,8 +1019,26 @@ class PlayerController extends Controller
                 
                 // Find the team that matches our team name OR the winner
                 $matchTeam = $match->teams->first(function($team) use ($teamName, $match) {
-                    return $team->team === $teamName || $team->team === $match->winner;
+                    return $team->team === $teamName || 
+                           $team->team === $match->winner;
                 });
+                
+                // If no exact match, we need to determine which team is ours
+                // Since the match has team_id = our activeTeamId, we can use that to identify our team
+                if (!$matchTeam) {
+                    // For tournament matches, we know this match belongs to our team_id
+                    // So we need to find which team in the match is ours
+                    // We'll use the team name from our team record as the primary identifier
+                    $ourTeamName = \App\Models\Team::find($activeTeamId)->name ?? $teamName;
+                    $matchTeam = $match->teams->first(function($team) use ($ourTeamName) {
+                        return $team->team === $ourTeamName;
+                    });
+                    
+                    // If still no match, take the first team (this is a fallback)
+                    if (!$matchTeam) {
+                        $matchTeam = $match->teams->first();
+                    }
+                }
                 
                 if (!$matchTeam) {
                     \Log::debug("No matching team found for match {$match->id}, teams: " . json_encode($match->teams->pluck('team')->toArray()));
@@ -1010,6 +1053,14 @@ class PlayerController extends Controller
                     \Log::debug("No enemy team found for match {$match->id}, our team: {$matchTeam->team}");
                     continue;
                 }
+                
+                \Log::info("DEBUG: Found teams for H2H", [
+                    'matchId' => $match->id,
+                    'ourTeam' => $matchTeam->team,
+                    'enemyTeam' => $enemyTeam->team,
+                    'ourPicks' => array_merge($matchTeam->picks1 ?? [], $matchTeam->picks2 ?? []),
+                    'enemyPicks' => array_merge($enemyTeam->picks1 ?? [], $enemyTeam->picks2 ?? [])
+                ]);
                 
                 // Get picks data and find hero for this player's role
                 $picks = array_merge($matchTeam->picks1 ?? [], $matchTeam->picks2 ?? []);
