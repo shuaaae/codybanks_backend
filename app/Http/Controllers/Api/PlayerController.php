@@ -521,9 +521,9 @@ class PlayerController extends Controller
             }])
             ->get();
             
-        // TOURNAMENT FALLBACK: If we're in tournament mode and no player assignments found, try direct match picks approach
-        if ($matchType === 'tournament' && $playerAssignments->count() === 0 && $fallbackAssignments->count() === 0) {
-            \Log::info("DEBUG: No player assignments found for tournament, trying direct match picks approach");
+        // TOURNAMENT FALLBACK: If we're in tournament mode and no hero data found, try direct match picks approach
+        if ($matchType === 'tournament' && empty($heroStats)) {
+            \Log::info("DEBUG: No hero data found for tournament, trying direct match picks approach");
             // Track processed match IDs to prevent duplicates
             $tournamentProcessedMatchIds = [];
             
@@ -994,9 +994,9 @@ class PlayerController extends Controller
             $result[] = array_merge($stat, ['winrate' => $rate]);
         }
         
-        // TOURNAMENT FALLBACK: If we're in tournament mode and no player assignments found, try direct match picks approach
-        if ($matchType === 'tournament' && $playerAssignments->count() === 0 && $fallbackAssignments->count() === 0) {
-            \Log::info("DEBUG: No player assignments found for tournament H2H, trying direct match picks approach");
+        // TOURNAMENT FALLBACK: If we're in tournament mode and no H2H data found, try direct match picks approach
+        if ($matchType === 'tournament' && empty($h2hStats)) {
+            \Log::info("DEBUG: No H2H data found for tournament, trying direct match picks approach");
             
             // Get tournament matches for this team - use the correct GameMatch model
             $tournamentMatches = \App\Models\GameMatch::where('team_id', $activeTeamId)
