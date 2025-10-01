@@ -442,9 +442,26 @@ class GameMatchController extends Controller
                 }
             }
 
-            // DO NOT sync all hero assignments - this corrupts the original match picks data
-            // Lane swapping should only update MatchPlayerAssignment records
-            // The original match picks data should remain intact for fresh matches
+            // Detect and process lane changes
+            try {
+                $laneChangeDetector = new \App\Services\LaneChangeDetector();
+                $laneChanges = $laneChangeDetector->detectLaneChanges($match, $validated['teams']);
+                
+                if (!empty($laneChanges)) {
+                    \Log::info('Processing detected lane changes', [
+                        'match_id' => $match->id,
+                        'changes_count' => count($laneChanges)
+                    ]);
+                    
+                    $laneChangeDetector->processLaneChanges($match, $laneChanges);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to process lane changes', [
+                    'match_id' => $match->id,
+                    'error' => $e->getMessage()
+                ]);
+                // Don't fail the match update if lane change processing fails
+            }
 
             // Return the fresh match with its new teams
             $match->load([
