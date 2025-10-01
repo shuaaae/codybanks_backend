@@ -346,6 +346,14 @@ class PlayerController extends Controller
             'matchType' => $matchType
         ]);
         
+        // DEBUG: Check if team exists
+        $team = \App\Models\Team::find($activeTeamId);
+        \Log::info("DEBUG: Team lookup", [
+            'activeTeamId' => $activeTeamId,
+            'teamFound' => $team ? $team->name : 'NOT FOUND',
+            'requestedTeamName' => $teamName
+        ]);
+        
         // Find the player in the team - use both name and role for unique identification
         $player = \App\Models\Player::where('name', $playerName)
             ->where('team_id', $activeTeamId)
@@ -501,10 +509,10 @@ class PlayerController extends Controller
         if ($matchType === 'tournament' && $fallbackAssignments->count() === 0 && $playerAssignments->count() === 0) {
             \Log::info("DEBUG: No player assignments found for tournament, trying direct match picks approach");
             
-            // Get tournament matches for this team - use the correct 'matches' table
-            $tournamentMatches = \App\Models\Match::where('team_id', $activeTeamId)
+            // Get tournament matches for this team - use the correct GameMatch model
+            $tournamentMatches = \App\Models\GameMatch::where('team_id', $activeTeamId)
                 ->where('match_type', 'tournament')
-                ->with(['matchTeams' => function($query) use ($teamName) {
+                ->with(['teams' => function($query) use ($teamName) {
                     $query->where('team', $teamName)
                           ->select('id', 'match_id', 'team', 'picks1', 'picks2');
                 }])
@@ -930,10 +938,10 @@ class PlayerController extends Controller
         if ($matchType === 'tournament' && (empty($h2hStats) || ($fallbackAssignments->count() === 0 && $playerAssignments->count() === 0))) {
             \Log::info("DEBUG: No player assignments found for tournament H2H, trying direct match picks approach");
             
-            // Get tournament matches for this team - use the correct 'matches' table
-            $tournamentMatches = \App\Models\Match::where('team_id', $activeTeamId)
+            // Get tournament matches for this team - use the correct GameMatch model
+            $tournamentMatches = \App\Models\GameMatch::where('team_id', $activeTeamId)
                 ->where('match_type', 'tournament')
-                ->with(['matchTeams' => function($query) {
+                ->with(['teams' => function($query) {
                     $query->select('id', 'match_id', 'team', 'picks1', 'picks2');
                 }])
                 ->get();
