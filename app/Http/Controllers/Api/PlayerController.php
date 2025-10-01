@@ -521,8 +521,8 @@ class PlayerController extends Controller
             }])
             ->get();
             
-        // TOURNAMENT FALLBACK: If no assignments found, try to get data directly from match picks
-        if ($matchType === 'tournament' && $fallbackAssignments->count() === 0 && $playerAssignments->count() === 0) {
+        // TOURNAMENT FALLBACK: If we're in tournament mode, always try direct match picks approach
+        if ($matchType === 'tournament') {
             \Log::info("DEBUG: No player assignments found for tournament, trying direct match picks approach");
             
             // Get tournament matches for this team - use the correct GameMatch model
@@ -548,27 +548,21 @@ class PlayerController extends Controller
                     'matchWinner' => $match->winner
                 ]);
                 
-                // Find the team that matches our team name OR the winner
-                $matchTeam = $match->teams->first(function($team) use ($teamName, $match) {
-                    return $team->team === $teamName || 
+                // For tournament matches, we need to find our team in the match
+                // Since the match has team_id = our activeTeamId, we know this match belongs to us
+                // We need to find which team in the match is ours
+                $ourTeamName = \App\Models\Team::find($activeTeamId)->name ?? $teamName;
+                
+                // Try to find our team by name first
+                $matchTeam = $match->teams->first(function($team) use ($ourTeamName, $teamName, $match) {
+                    return $team->team === $ourTeamName || 
+                           $team->team === $teamName ||
                            $team->team === $match->winner;
                 });
                 
-                // If no exact match, we need to determine which team is ours
-                // Since the match has team_id = our activeTeamId, we can use that to identify our team
+                // If still no match, take the first team (this is a fallback)
                 if (!$matchTeam) {
-                    // For tournament matches, we know this match belongs to our team_id
-                    // So we need to find which team in the match is ours
-                    // We'll use the team name from our team record as the primary identifier
-                    $ourTeamName = \App\Models\Team::find($activeTeamId)->name ?? $teamName;
-                    $matchTeam = $match->teams->first(function($team) use ($ourTeamName) {
-                        return $team->team === $ourTeamName;
-                    });
-                    
-                    // If still no match, take the first team (this is a fallback)
-                    if (!$matchTeam) {
-                        $matchTeam = $match->teams->first();
-                    }
+                    $matchTeam = $match->teams->first();
                 }
                 
                 if (!$matchTeam) {
@@ -603,7 +597,7 @@ class PlayerController extends Controller
                 }
                 
                 // Determine if this was a win or loss
-                $isWin = $match->winner === $teamName;
+                $isWin = $match->winner === $matchTeam->team;
                 $hero = $playerPick['hero'];
                 
                 if (!isset($heroStats[$hero])) {
@@ -989,8 +983,8 @@ class PlayerController extends Controller
             $result[] = array_merge($stat, ['winrate' => $rate]);
         }
         
-        // TOURNAMENT FALLBACK: If no assignments found OR if we're in tournament mode and have no H2H data, try direct match picks
-        if ($matchType === 'tournament' && (empty($h2hStats) || ($fallbackAssignments->count() === 0 && $playerAssignments->count() === 0))) {
+        // TOURNAMENT FALLBACK: If we're in tournament mode, always try direct match picks approach
+        if ($matchType === 'tournament') {
             \Log::info("DEBUG: No player assignments found for tournament H2H, trying direct match picks approach");
             
             // Get tournament matches for this team - use the correct GameMatch model
@@ -1017,27 +1011,21 @@ class PlayerController extends Controller
                     'matchWinner' => $match->winner
                 ]);
                 
-                // Find the team that matches our team name OR the winner
-                $matchTeam = $match->teams->first(function($team) use ($teamName, $match) {
-                    return $team->team === $teamName || 
+                // For tournament matches, we need to find our team in the match
+                // Since the match has team_id = our activeTeamId, we know this match belongs to us
+                // We need to find which team in the match is ours
+                $ourTeamName = \App\Models\Team::find($activeTeamId)->name ?? $teamName;
+                
+                // Try to find our team by name first
+                $matchTeam = $match->teams->first(function($team) use ($ourTeamName, $teamName, $match) {
+                    return $team->team === $ourTeamName || 
+                           $team->team === $teamName ||
                            $team->team === $match->winner;
                 });
                 
-                // If no exact match, we need to determine which team is ours
-                // Since the match has team_id = our activeTeamId, we can use that to identify our team
+                // If still no match, take the first team (this is a fallback)
                 if (!$matchTeam) {
-                    // For tournament matches, we know this match belongs to our team_id
-                    // So we need to find which team in the match is ours
-                    // We'll use the team name from our team record as the primary identifier
-                    $ourTeamName = \App\Models\Team::find($activeTeamId)->name ?? $teamName;
-                    $matchTeam = $match->teams->first(function($team) use ($ourTeamName) {
-                        return $team->team === $ourTeamName;
-                    });
-                    
-                    // If still no match, take the first team (this is a fallback)
-                    if (!$matchTeam) {
-                        $matchTeam = $match->teams->first();
-                    }
+                    $matchTeam = $match->teams->first();
                 }
                 
                 if (!$matchTeam) {
@@ -1099,7 +1087,7 @@ class PlayerController extends Controller
                 }
                 
                 // Determine if this was a win or loss
-                $isWin = $match->winner === $teamName;
+                $isWin = $match->winner === $matchTeam->team;
                 $playerHero = $playerPick['hero'];
                 
                 $key = $playerHero . ' vs ' . $enemyHero;
