@@ -416,6 +416,25 @@ class PlayerController extends Controller
                     ];
                 })->toArray()
             ]);
+            
+            // DEBUG: Check if there are ANY player assignments for tournament matches
+            $allTournamentAssignments = \App\Models\MatchPlayerAssignment::whereHas('match', function($query) use ($activeTeamId) {
+                $query->where('team_id', $activeTeamId)
+                      ->where('match_type', 'tournament');
+            })->get();
+            \Log::info("DEBUG: All tournament assignments for team", [
+                'teamId' => $activeTeamId,
+                'totalAssignments' => $allTournamentAssignments->count(),
+                'assignments' => $allTournamentAssignments->map(function($assignment) {
+                    return [
+                        'id' => $assignment->id,
+                        'player_id' => $assignment->player_id,
+                        'match_id' => $assignment->match_id,
+                        'hero_name' => $assignment->hero_name,
+                        'role' => $assignment->role
+                    ];
+                })->toArray()
+            ]);
         }
         
         $heroStats = [];
@@ -475,6 +494,73 @@ class PlayerController extends Controller
                 $query->select('id', 'match_id', 'team', 'picks1', 'picks2');
             }])
             ->get();
+            
+        // TOURNAMENT FALLBACK: If no assignments found, try to get data directly from match picks
+        if ($matchType === 'tournament' && $fallbackAssignments->count() === 0 && $playerAssignments->count() === 0) {
+            \Log::info("DEBUG: No player assignments found for tournament, trying direct match picks approach");
+            
+            // Get tournament matches for this team
+            $tournamentMatches = \App\Models\GameMatch::where('team_id', $activeTeamId)
+                ->where('match_type', 'tournament')
+                ->with(['teams' => function($query) use ($teamName) {
+                    $query->where('team', $teamName)
+                          ->select('id', 'match_id', 'team', 'picks1', 'picks2');
+                }])
+                ->get();
+                
+            \Log::info("DEBUG: Direct tournament matches approach", [
+                'tournamentMatchesCount' => $tournamentMatches->count(),
+                'matchIds' => $tournamentMatches->pluck('id')->toArray()
+            ]);
+            
+            // Process each tournament match directly
+            foreach ($tournamentMatches as $match) {
+                $matchTeam = $match->teams->first();
+                if (!$matchTeam) continue;
+                
+                // Get picks data and find hero for this player's role
+                $picks = array_merge($matchTeam->picks1 ?? [], $matchTeam->picks2 ?? []);
+                
+                // Find the pick for this player's role
+                $playerPick = null;
+                foreach ($picks as $pick) {
+                    if (is_array($pick) && isset($pick['lane']) && isset($pick['hero'])) {
+                        if (strtolower($pick['lane']) === strtolower($player->role)) {
+                            $playerPick = $pick;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!$playerPick || !$playerPick['hero']) {
+                    \Log::debug("No hero found for role {$player->role} in tournament match {$match->id} for player {$playerName}");
+                    continue;
+                }
+                
+                // Determine if this was a win or loss
+                $isWin = $match->winner === $teamName;
+                $hero = $playerPick['hero'];
+                
+                if (!isset($heroStats[$hero])) {
+                    $heroStats[$hero] = ['win' => 0, 'lose' => 0, 'total' => 0];
+                }
+                $heroStats[$hero]['total']++;
+                if ($isWin) {
+                    $heroStats[$hero]['win']++;
+                } else {
+                    $heroStats[$hero]['lose']++;
+                }
+                
+                \Log::info("DEBUG: Direct tournament match processed", [
+                    'playerName' => $playerName,
+                    'matchId' => $match->id,
+                    'hero' => $hero,
+                    'isWin' => $isWin,
+                    'winner' => $match->winner,
+                    'teamName' => $teamName
+                ]);
+            }
+        }
             
         \Log::info("Processing fallback assignments for hero stats", [
             'playerId' => $player->id,
