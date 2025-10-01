@@ -379,8 +379,44 @@ class PlayerController extends Controller
             'playerId' => $player->id,
             'playerName' => $playerName,
             'assignmentsCount' => $playerAssignments->count(),
-            'matchType' => $matchType
+            'matchType' => $matchType,
+            'activeTeamId' => $activeTeamId,
+            'teamName' => $teamName
         ]);
+        
+        // DEBUG: Log all tournament matches for this team
+        if ($matchType === 'tournament') {
+            $tournamentMatches = \App\Models\GameMatch::where('team_id', $activeTeamId)
+                ->where('match_type', 'tournament')
+                ->get();
+            \Log::info("DEBUG: Tournament matches for team", [
+                'teamId' => $activeTeamId,
+                'teamName' => $teamName,
+                'tournamentMatchesCount' => $tournamentMatches->count(),
+                'matchIds' => $tournamentMatches->pluck('id')->toArray()
+            ]);
+            
+            // DEBUG: Log player assignments for tournament matches
+            $tournamentAssignments = \App\Models\MatchPlayerAssignment::where('player_id', $player->id)
+                ->whereHas('match', function($query) use ($activeTeamId) {
+                    $query->where('team_id', $activeTeamId)
+                          ->where('match_type', 'tournament');
+                })
+                ->get();
+            \Log::info("DEBUG: Tournament player assignments", [
+                'playerId' => $player->id,
+                'playerName' => $playerName,
+                'assignmentsCount' => $tournamentAssignments->count(),
+                'assignments' => $tournamentAssignments->map(function($assignment) {
+                    return [
+                        'id' => $assignment->id,
+                        'match_id' => $assignment->match_id,
+                        'hero_name' => $assignment->hero_name,
+                        'role' => $assignment->role
+                    ];
+                })->toArray()
+            ]);
+        }
         
         $heroStats = [];
         $processedMatchIds = [];
