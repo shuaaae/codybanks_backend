@@ -587,24 +587,35 @@ class PlayerController extends Controller
                     'playerRole' => $role
                 ]);
                 
-                // Find the pick for this player's role
+                // Find the pick for this specific player
                 $playerPick = null;
                 foreach ($picks as $pick) {
                     if (is_array($pick) && isset($pick['lane']) && isset($pick['hero'])) {
                         \Log::debug("DEBUG: Checking pick for hero stats", [
                             'pick' => $pick,
+                            'playerName' => $playerName,
                             'playerRole' => $player->role,
                             'pickLane' => $pick['lane'],
                             'pickHero' => $pick['hero'],
                             'matchId' => $match->id
                         ]);
                         
-                        // Match by role - exp should match 'exp' lane
-                        if (strtolower($pick['lane']) === strtolower($player->role)) {
+                        // Match by role AND player name if available
+                        $roleMatches = strtolower($pick['lane']) === strtolower($player->role);
+                        $playerMatches = false;
+                        
+                        // Check if pick has player name and it matches
+                        if (isset($pick['player']) && $pick['player'] === $playerName) {
+                            $playerMatches = true;
+                        }
+                        
+                        // If we have player name in pick, use it; otherwise fall back to role matching
+                        if ($playerMatches || ($roleMatches && !isset($pick['player']))) {
                             $playerPick = $pick;
-                            \Log::info("DEBUG: Found matching pick for role {$player->role}", [
+                            \Log::info("DEBUG: Found matching pick for player {$playerName} role {$player->role}", [
                                 'pick' => $pick,
-                                'matchId' => $match->id
+                                'matchId' => $match->id,
+                                'matchedBy' => $playerMatches ? 'player_name' : 'role'
                             ]);
                             break;
                         }
@@ -1078,24 +1089,35 @@ class PlayerController extends Controller
                 $picks = array_merge($matchTeam->picks1 ?? [], $matchTeam->picks2 ?? []);
                 $enemyPicks = array_merge($enemyTeam->picks1 ?? [], $enemyTeam->picks2 ?? []);
                 
-                // Find the pick for this player's role
+                // Find the pick for this specific player
                 $playerPick = null;
                 foreach ($picks as $pick) {
                     if (is_array($pick) && isset($pick['lane']) && isset($pick['hero'])) {
                         \Log::debug("DEBUG: Checking pick for H2H stats", [
                             'pick' => $pick,
+                            'playerName' => $playerName,
                             'playerRole' => $player->role,
                             'pickLane' => $pick['lane'],
                             'pickHero' => $pick['hero'],
                             'matchId' => $match->id
                         ]);
                         
-                        // Match by role - exp should match 'exp' lane
-                        if (strtolower($pick['lane']) === strtolower($player->role)) {
+                        // Match by role AND player name if available
+                        $roleMatches = strtolower($pick['lane']) === strtolower($player->role);
+                        $playerMatches = false;
+                        
+                        // Check if pick has player name and it matches
+                        if (isset($pick['player']) && $pick['player'] === $playerName) {
+                            $playerMatches = true;
+                        }
+                        
+                        // If we have player name in pick, use it; otherwise fall back to role matching
+                        if ($playerMatches || ($roleMatches && !isset($pick['player']))) {
                             $playerPick = $pick;
-                            \Log::info("DEBUG: Found matching pick for H2H role {$player->role}", [
+                            \Log::info("DEBUG: Found matching pick for H2H player {$playerName} role {$player->role}", [
                                 'pick' => $pick,
-                                'matchId' => $match->id
+                                'matchId' => $match->id,
+                                'matchedBy' => $playerMatches ? 'player_name' : 'role'
                             ]);
                             break;
                         }
