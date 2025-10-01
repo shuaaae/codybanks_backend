@@ -501,10 +501,10 @@ class PlayerController extends Controller
         if ($matchType === 'tournament' && $fallbackAssignments->count() === 0 && $playerAssignments->count() === 0) {
             \Log::info("DEBUG: No player assignments found for tournament, trying direct match picks approach");
             
-            // Get tournament matches for this team
-            $tournamentMatches = \App\Models\GameMatch::where('team_id', $activeTeamId)
+            // Get tournament matches for this team - use the correct 'matches' table
+            $tournamentMatches = \App\Models\Match::where('team_id', $activeTeamId)
                 ->where('match_type', 'tournament')
-                ->with(['teams' => function($query) use ($teamName) {
+                ->with(['matchTeams' => function($query) use ($teamName) {
                     $query->where('team', $teamName)
                           ->select('id', 'match_id', 'team', 'picks1', 'picks2');
                 }])
@@ -926,26 +926,33 @@ class PlayerController extends Controller
             $result[] = array_merge($stat, ['winrate' => $rate]);
         }
         
-        // TOURNAMENT FALLBACK: If no assignments found, try to get H2H data directly from match picks
-        if ($matchType === 'tournament' && $fallbackAssignments->count() === 0 && $playerAssignments->count() === 0) {
+        // TOURNAMENT FALLBACK: If no assignments found OR if we're in tournament mode and have no H2H data, try direct match picks
+        if ($matchType === 'tournament' && (empty($h2hStats) || ($fallbackAssignments->count() === 0 && $playerAssignments->count() === 0))) {
             \Log::info("DEBUG: No player assignments found for tournament H2H, trying direct match picks approach");
             
-            // Get tournament matches for this team
-            $tournamentMatches = \App\Models\GameMatch::where('team_id', $activeTeamId)
+            // Get tournament matches for this team - use the correct 'matches' table
+            $tournamentMatches = \App\Models\Match::where('team_id', $activeTeamId)
                 ->where('match_type', 'tournament')
-                ->with(['teams' => function($query) use ($teamName) {
-                    $query->where('team', $teamName)
-                          ->select('id', 'match_id', 'team', 'picks1', 'picks2');
+                ->with(['matchTeams' => function($query) {
+                    $query->select('id', 'match_id', 'team', 'picks1', 'picks2');
                 }])
                 ->get();
                 
             \Log::info("DEBUG: Direct tournament matches approach for H2H", [
                 'tournamentMatchesCount' => $tournamentMatches->count(),
-                'matchIds' => $tournamentMatches->pluck('id')->toArray()
+                'matchIds' => $tournamentMatches->pluck('id')->toArray(),
+                'teamName' => $teamName,
+                'activeTeamId' => $activeTeamId
             ]);
             
             // Process each tournament match directly for H2H
             foreach ($tournamentMatches as $match) {
+                \Log::info("DEBUG: Processing tournament match for H2H", [
+                    'matchId' => $match->id,
+                    'teams' => $match->teams->pluck('team')->toArray(),
+                    'lookingForTeam' => $teamName
+                ]);
+                
                 $matchTeam = $match->teams->first();
                 if (!$matchTeam) continue;
                 
