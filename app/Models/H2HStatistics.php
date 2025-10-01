@@ -15,6 +15,7 @@ class H2HStatistics extends Model
         'match_id', 
         'hero_used',
         'enemy_hero',
+        'lane',
         'match_type',
         'is_win',
         'match_date'

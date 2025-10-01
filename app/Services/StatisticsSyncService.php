@@ -159,6 +159,7 @@ class StatisticsSyncService
                 'team_id' => $match->team_id,
                 'match_id' => $match->id,
                 'hero_name' => $heroName,
+                'lane' => $lane,
                 'match_type' => $match->match_type,
                 'is_win' => $isWin,
                 'match_date' => $match->created_at
@@ -186,6 +187,7 @@ class StatisticsSyncService
                         'match_id' => $match->id,
                         'hero_used' => $heroName,
                         'enemy_hero' => $enemyHeroInSameLane,
+                        'lane' => $lane,
                         'match_type' => $match->match_type,
                         'is_win' => $isWin,
                         'match_date' => $match->created_at

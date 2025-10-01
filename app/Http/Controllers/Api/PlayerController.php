@@ -1745,4 +1745,77 @@ class PlayerController extends Controller
             return response()->json(['error' => 'Failed to get H2H stats'], 500);
         }
     }
+
+    /**
+     * Handle lane changes for a match
+     */
+    public function updateLaneChanges(Request $request)
+    {
+        try {
+            $request->validate([
+                'match_id' => 'required|integer',
+                'lane_changes' => 'required|array',
+                'lane_changes.*.player_name' => 'required|string',
+                'lane_changes.*.old_lane' => 'required|string',
+                'lane_changes.*.new_lane' => 'required|string'
+            ]);
+
+            $laneChangeService = new \App\Services\LaneChangeService();
+            $result = $laneChangeService->handleBulkLaneChanges(
+                $request->match_id,
+                $request->lane_changes
+            );
+
+            if ($result) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Lane changes updated successfully'
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Failed to update lane changes'
+                ], 500);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error updating lane changes: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to update lane changes'
+            ], 500);
+        }
+    }
+
+    /**
+     * Re-sync match statistics after changes
+     */
+    public function resyncMatchStatistics(Request $request)
+    {
+        try {
+            $request->validate([
+                'match_id' => 'required|integer'
+            ]);
+
+            $laneChangeService = new \App\Services\LaneChangeService();
+            $result = $laneChangeService->resyncMatchStatistics($request->match_id);
+
+            if ($result) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Match statistics re-synced successfully'
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Failed to re-sync match statistics'
+                ], 500);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error re-syncing match statistics: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to re-sync match statistics'
+            ], 500);
+        }
+    }
 }

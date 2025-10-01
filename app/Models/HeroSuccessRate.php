@@ -14,6 +14,7 @@ class HeroSuccessRate extends Model
         'team_id', 
         'match_id',
         'hero_name',
+        'lane',
         'match_type',
         'is_win',
         'match_date'

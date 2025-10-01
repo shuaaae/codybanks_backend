@@ -512,6 +512,10 @@ Route::get('/players/{playerName}/hero-h2h-stats-by-team', [PlayerController::cl
 Route::get('/players/{playerId}/hero-success-rate/{teamId}/{matchType}', [PlayerController::class, 'getHeroSuccessRateStats']);
 Route::get('/players/{playerId}/h2h-stats/{teamId}/{matchType}', [PlayerController::class, 'getH2HStats']);
 
+// Lane change routes
+Route::post('/matches/{matchId}/update-lane-changes', [PlayerController::class, 'updateLaneChanges']);
+Route::post('/matches/{matchId}/resync-statistics', [PlayerController::class, 'resyncMatchStatistics']);
+
 // Team routes (with session support)
 Route::middleware('enable-sessions')->group(function () {
     // Matches endpoints (moved here to access session data)
