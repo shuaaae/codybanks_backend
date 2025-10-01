@@ -591,8 +591,21 @@ class PlayerController extends Controller
                 $playerPick = null;
                 foreach ($picks as $pick) {
                     if (is_array($pick) && isset($pick['lane']) && isset($pick['hero'])) {
+                        \Log::debug("DEBUG: Checking pick for hero stats", [
+                            'pick' => $pick,
+                            'playerRole' => $player->role,
+                            'pickLane' => $pick['lane'],
+                            'pickHero' => $pick['hero'],
+                            'matchId' => $match->id
+                        ]);
+                        
+                        // Match by role - exp should match 'exp' lane
                         if (strtolower($pick['lane']) === strtolower($player->role)) {
                             $playerPick = $pick;
+                            \Log::info("DEBUG: Found matching pick for role {$player->role}", [
+                                'pick' => $pick,
+                                'matchId' => $match->id
+                            ]);
                             break;
                         }
                     }
@@ -1069,8 +1082,21 @@ class PlayerController extends Controller
                 $playerPick = null;
                 foreach ($picks as $pick) {
                     if (is_array($pick) && isset($pick['lane']) && isset($pick['hero'])) {
+                        \Log::debug("DEBUG: Checking pick for H2H stats", [
+                            'pick' => $pick,
+                            'playerRole' => $player->role,
+                            'pickLane' => $pick['lane'],
+                            'pickHero' => $pick['hero'],
+                            'matchId' => $match->id
+                        ]);
+                        
+                        // Match by role - exp should match 'exp' lane
                         if (strtolower($pick['lane']) === strtolower($player->role)) {
                             $playerPick = $pick;
+                            \Log::info("DEBUG: Found matching pick for H2H role {$player->role}", [
+                                'pick' => $pick,
+                                'matchId' => $match->id
+                            ]);
                             break;
                         }
                     }
