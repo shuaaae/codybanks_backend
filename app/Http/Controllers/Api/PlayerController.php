@@ -521,16 +521,17 @@ class PlayerController extends Controller
             }])
             ->get();
             
-        // TOURNAMENT FALLBACK: If we're in tournament mode, always try direct match picks approach
-        if ($matchType === 'tournament') {
+        // TOURNAMENT FALLBACK: If we're in tournament mode and no player assignments found, try direct match picks approach
+        if ($matchType === 'tournament' && $playerAssignments->count() === 0 && $fallbackAssignments->count() === 0) {
             \Log::info("DEBUG: No player assignments found for tournament, trying direct match picks approach");
+            // Track processed match IDs to prevent duplicates
+            $tournamentProcessedMatchIds = [];
             
             // Get tournament matches for this team - use the correct GameMatch model
             $tournamentMatches = \App\Models\GameMatch::where('team_id', $activeTeamId)
                 ->where('match_type', 'tournament')
-                ->with(['teams' => function($query) use ($teamName) {
-                    $query->where('team', $teamName)
-                          ->select('id', 'match_id', 'team', 'picks1', 'picks2');
+                ->with(['teams' => function($query) {
+                    $query->select('id', 'match_id', 'team', 'picks1', 'picks2');
                 }])
                 ->get();
                 
@@ -541,6 +542,12 @@ class PlayerController extends Controller
             
             // Process each tournament match directly
             foreach ($tournamentMatches as $match) {
+                // Skip if already processed
+                if (in_array($match->id, $tournamentProcessedMatchIds)) {
+                    \Log::debug("Skipping already processed tournament match {$match->id}");
+                    continue;
+                }
+                
                 \Log::info("DEBUG: Processing tournament match for hero stats", [
                     'matchId' => $match->id,
                     'teams' => $match->teams->pluck('team')->toArray(),
@@ -616,8 +623,12 @@ class PlayerController extends Controller
                     'hero' => $hero,
                     'isWin' => $isWin,
                     'winner' => $match->winner,
-                    'teamName' => $teamName
+                    'teamName' => $teamName,
+                    'currentHeroStats' => $heroStats
                 ]);
+                
+                // Mark this match as processed
+                $tournamentProcessedMatchIds[] = $match->id;
             }
         }
             
@@ -983,8 +994,8 @@ class PlayerController extends Controller
             $result[] = array_merge($stat, ['winrate' => $rate]);
         }
         
-        // TOURNAMENT FALLBACK: If we're in tournament mode, always try direct match picks approach
-        if ($matchType === 'tournament') {
+        // TOURNAMENT FALLBACK: If we're in tournament mode and no player assignments found, try direct match picks approach
+        if ($matchType === 'tournament' && $playerAssignments->count() === 0 && $fallbackAssignments->count() === 0) {
             \Log::info("DEBUG: No player assignments found for tournament H2H, trying direct match picks approach");
             
             // Get tournament matches for this team - use the correct GameMatch model
@@ -1115,7 +1126,8 @@ class PlayerController extends Controller
                     'enemyHero' => $enemyHero,
                     'isWin' => $isWin,
                     'winner' => $match->winner,
-                    'teamName' => $teamName
+                    'teamName' => $teamName,
+                    'currentH2HStats' => $h2hStats
                 ]);
             }
         }
