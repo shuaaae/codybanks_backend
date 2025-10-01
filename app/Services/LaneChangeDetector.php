@@ -89,15 +89,33 @@ class LaneChangeDetector
     }
     
     /**
+     * Map lane to player name for the team
+     */
+    private function getLaneToPlayerMapping(int $teamId)
+    {
+        $players = \App\Models\Player::where('team_id', $teamId)->get();
+        $mapping = [];
+        
+        foreach ($players as $player) {
+            $mapping[$player->role] = $player->name;
+        }
+        
+        return $mapping;
+    }
+    
+    /**
      * Compare old and new picks to detect lane changes
      */
     private function comparePicks(array $currentPicks, array $newPicks, int $teamId)
     {
         $changes = [];
         
+        // Get lane to player mapping
+        $laneToPlayer = $this->getLaneToPlayerMapping($teamId);
+        
         // Create maps for easier comparison
-        $currentMap = $this->createPickMap($currentPicks);
-        $newMap = $this->createPickMap($newPicks);
+        $currentMap = $this->createPickMap($currentPicks, $laneToPlayer);
+        $newMap = $this->createPickMap($newPicks, $laneToPlayer);
         
         // Check for lane changes
         foreach ($currentMap as $playerName => $currentPick) {
@@ -129,17 +147,28 @@ class LaneChangeDetector
     /**
      * Create a map of picks by player name for easier comparison
      */
-    private function createPickMap(array $picks)
+    private function createPickMap(array $picks, array $laneToPlayer = [])
     {
         $map = [];
         
         foreach ($picks as $pick) {
-            if (isset($pick['player']) && isset($pick['hero']) && isset($pick['lane'])) {
-                $playerName = is_array($pick['player']) ? implode(' ', $pick['player']) : $pick['player'];
-                $map[$playerName] = [
-                    'hero' => $pick['hero'],
-                    'lane' => $pick['lane']
-                ];
+            if (isset($pick['hero']) && isset($pick['lane'])) {
+                // Get player name from pick or map from lane
+                $playerName = null;
+                if (isset($pick['player']) && $pick['player'] !== null) {
+                    $playerName = is_array($pick['player']) ? implode(' ', $pick['player']) : $pick['player'];
+                } else {
+                    // Map lane to player if player is null
+                    $lane = $pick['lane'];
+                    $playerName = $laneToPlayer[$lane] ?? null;
+                }
+                
+                if ($playerName) {
+                    $map[$playerName] = [
+                        'hero' => $pick['hero'],
+                        'lane' => $pick['lane']
+                    ];
+                }
             }
         }
         
