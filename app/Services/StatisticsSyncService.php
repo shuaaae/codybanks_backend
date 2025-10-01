@@ -49,14 +49,66 @@ class StatisticsSyncService
      */
     private function processMatchTeam(GameMatch $match, MatchTeam $matchTeam)
     {
+        // Get our team name from the team_id
+        $ourTeam = \App\Models\Team::find($match->team_id);
+        if (!$ourTeam) {
+            Log::warning("Team not found for match", ['team_id' => $match->team_id, 'match_id' => $match->id]);
+            return;
+        }
+        
+        // Only process if this is our team
+        if ($matchTeam->team !== $ourTeam->name) {
+            Log::info("Skipping enemy team", ['team_name' => $matchTeam->team, 'our_team' => $ourTeam->name]);
+            return;
+        }
+        
+        Log::info("Processing our team", ['team_name' => $matchTeam->team, 'our_team' => $ourTeam->name]);
+        
         $picks1 = $matchTeam->picks1 ?? [];
         $picks2 = $matchTeam->picks2 ?? [];
         
-        // Process picks1 (our team)
-        $this->processPicks($match, $matchTeam, $picks1, $picks2, true);
+        // Combine all picks from our team
+        $ourPicks = array_merge($picks1, $picks2);
         
-        // Process picks2 (enemy team) - for H2H data
-        $this->processPicks($match, $matchTeam, $picks2, $picks1, false);
+        // Find enemy team picks
+        $enemyPicks = $this->getEnemyPicks($match, $matchTeam);
+        
+        // Process our team's picks
+        $this->processPicks($match, $matchTeam, $ourPicks, $enemyPicks, true);
+    }
+    
+    /**
+     * Get enemy team picks for H2H statistics
+     */
+    private function getEnemyPicks(GameMatch $match, MatchTeam $ourTeam)
+    {
+        $enemyPicks = [];
+        
+        // Get our team name
+        $ourTeamModel = \App\Models\Team::find($match->team_id);
+        if (!$ourTeamModel) {
+            return $enemyPicks;
+        }
+        
+        foreach ($match->teams as $team) {
+            // Skip our team
+            if ($team->team === $ourTeamModel->name) {
+                continue;
+            }
+            
+            // This is an enemy team, get their picks
+            $enemyPicks1 = $team->picks1 ?? [];
+            $enemyPicks2 = $team->picks2 ?? [];
+            $enemyPicks = array_merge($enemyPicks, $enemyPicks1, $enemyPicks2);
+            
+            Log::info("Found enemy team picks", [
+                'enemy_team' => $team->team,
+                'picks1_count' => count($enemyPicks1),
+                'picks2_count' => count($enemyPicks2)
+            ]);
+        }
+        
+        return $enemyPicks;
     }
     
     /**
@@ -112,21 +164,46 @@ class StatisticsSyncService
                 'match_date' => $match->created_at
             ]);
             
-            // Create H2H statistics for each enemy hero
+            // Create H2H statistics for the enemy hero in the SAME LANE only
             if ($isOurTeam) {
+                // Find the enemy hero in the same lane
+                $enemyHeroInSameLane = null;
                 foreach ($enemyPicks as $enemyPick) {
-                    if (is_array($enemyPick) && isset($enemyPick['hero'])) {
-                        H2HStatistics::create([
-                            'player_id' => $player->id,
-                            'team_id' => $match->team_id,
-                            'match_id' => $match->id,
-                            'hero_used' => $heroName,
-                            'enemy_hero' => $enemyPick['hero'],
-                            'match_type' => $match->match_type,
-                            'is_win' => $isWin,
-                            'match_date' => $match->created_at
-                        ]);
+                    if (is_array($enemyPick) && isset($enemyPick['hero']) && isset($enemyPick['lane'])) {
+                        // Check if this enemy pick is in the same lane as our player
+                        if (strtolower($enemyPick['lane']) === strtolower($lane)) {
+                            $enemyHeroInSameLane = $enemyPick['hero'];
+                            break;
+                        }
                     }
+                }
+                
+                // Only create H2H record if we found an enemy hero in the same lane
+                if ($enemyHeroInSameLane) {
+                    H2HStatistics::create([
+                        'player_id' => $player->id,
+                        'team_id' => $match->team_id,
+                        'match_id' => $match->id,
+                        'hero_used' => $heroName,
+                        'enemy_hero' => $enemyHeroInSameLane,
+                        'match_type' => $match->match_type,
+                        'is_win' => $isWin,
+                        'match_date' => $match->created_at
+                    ]);
+                    
+                    Log::info("Created H2H record for same-lane matchup", [
+                        'player' => $player->name,
+                        'hero_used' => $heroName,
+                        'enemy_hero' => $enemyHeroInSameLane,
+                        'lane' => $lane,
+                        'match_id' => $match->id
+                    ]);
+                } else {
+                    Log::warning("No enemy hero found in same lane for H2H", [
+                        'player' => $player->name,
+                        'lane' => $lane,
+                        'match_id' => $match->id
+                    ]);
                 }
             }
         }
