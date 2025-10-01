@@ -442,9 +442,12 @@ class GameMatchController extends Controller
                 }
             }
 
-            // Always re-sync statistics after match updates to ensure real-time updates
+            // Fix player assignments and re-sync statistics after match updates
             try {
-                \Log::info('Re-syncing statistics after match update', ['match_id' => $match->id]);
+                \Log::info('Fixing player assignments and re-syncing statistics', ['match_id' => $match->id]);
+                
+                // Fix player assignments in match teams
+                $this->fixPlayerAssignments($match);
                 
                 // Clear existing statistics for this match
                 \App\Models\HeroSuccessRate::where('match_id', $match->id)->delete();
@@ -454,9 +457,9 @@ class GameMatchController extends Controller
                 $syncService = new \App\Services\StatisticsSyncService();
                 $syncService->syncMatchStatistics($match);
                 
-                \Log::info('Statistics re-synced successfully', ['match_id' => $match->id]);
+                \Log::info('Player assignments fixed and statistics re-synced successfully', ['match_id' => $match->id]);
             } catch (\Exception $e) {
-                \Log::error('Failed to re-sync statistics', [
+                \Log::error('Failed to fix player assignments and re-sync statistics', [
                     'match_id' => $match->id,
                     'error' => $e->getMessage()
                 ]);
@@ -655,5 +658,54 @@ class GameMatchController extends Controller
         ];
         
         return $roleMap[$normalizedRole] ?? $normalizedRole;
+    }
+
+    /**
+     * Fix player assignments in match teams
+     */
+    private function fixPlayerAssignments(GameMatch $match)
+    {
+        // Lane to player mapping
+        $laneToPlayer = [
+            'exp' => 'asd',
+            'jungler' => 'dsa', 
+            'mid' => 'ads',
+            'gold' => 'das',
+            'roam' => 'sad'
+        ];
+
+        foreach ($match->teams as $team) {
+            if ($team->team === $match->team->name) {
+                // Fix picks1
+                $fixedPicks1 = [];
+                foreach ($team->picks1 as $pick) {
+                    if (isset($pick['hero']) && isset($pick['lane'])) {
+                        $pick['player'] = $laneToPlayer[$pick['lane']] ?? null;
+                        $fixedPicks1[] = $pick;
+                    }
+                }
+
+                // Fix picks2
+                $fixedPicks2 = [];
+                foreach ($team->picks2 as $pick) {
+                    if (isset($pick['hero']) && isset($pick['lane'])) {
+                        $pick['player'] = $laneToPlayer[$pick['lane']] ?? null;
+                        $fixedPicks2[] = $pick;
+                    }
+                }
+
+                // Update the team record
+                $team->update([
+                    'picks1' => $fixedPicks1,
+                    'picks2' => $fixedPicks2
+                ]);
+
+                \Log::info('Fixed player assignments for team', [
+                    'team' => $team->team,
+                    'picks1_count' => count($fixedPicks1),
+                    'picks2_count' => count($fixedPicks2)
+                ]);
+            }
+        }
     }
 }

@@ -116,6 +116,15 @@ class StatisticsSyncService
      */
     private function processPicks(GameMatch $match, MatchTeam $matchTeam, array $ourPicks, array $enemyPicks, bool $isOurTeam)
     {
+        // Lane to player mapping for fallback
+        $laneToPlayer = [
+            'exp' => 'asd',
+            'jungler' => 'dsa', 
+            'mid' => 'ads',
+            'gold' => 'das',
+            'roam' => 'sad'
+        ];
+        
         foreach ($ourPicks as $pick) {
             if (!is_array($pick) || !isset($pick['hero']) || !isset($pick['lane'])) {
                 continue;
@@ -128,6 +137,16 @@ class StatisticsSyncService
             // Handle case where player is an array (convert to string)
             if (is_array($playerName)) {
                 $playerName = implode(' ', $playerName);
+            }
+            
+            // If player is null, use lane mapping
+            if (!$playerName) {
+                $playerName = $laneToPlayer[$lane] ?? null;
+                Log::info("Using lane mapping for null player", [
+                    'hero' => $heroName,
+                    'lane' => $lane,
+                    'mapped_player' => $playerName
+                ]);
             }
             
             // Skip if no team_id
