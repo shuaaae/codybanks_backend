@@ -147,3 +147,4 @@ class PopulateMissingPlayerAssignments extends Command
         return 0;
     }
 }
+
