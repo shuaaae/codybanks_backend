@@ -516,6 +516,9 @@ Route::get('/players/{playerId}/h2h-stats/{teamId}/{matchType}', [PlayerControll
 Route::post('/matches/{matchId}/update-lane-changes', [PlayerController::class, 'updateLaneChanges']);
 Route::post('/matches/{matchId}/resync-statistics', [PlayerController::class, 'resyncMatchStatistics']);
 
+// Force refresh player statistics
+Route::post('/players/refresh-statistics', [PlayerController::class, 'refreshPlayerStatistics']);
+
 // Team routes (with session support)
 Route::middleware('enable-sessions')->group(function () {
     // Matches endpoints (moved here to access session data)

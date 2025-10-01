@@ -1747,6 +1747,49 @@ class PlayerController extends Controller
     }
 
     /**
+     * Force refresh player statistics cache
+     */
+    public function refreshPlayerStatistics(Request $request)
+    {
+        try {
+            $request->validate([
+                'player_id' => 'required|integer',
+                'team_id' => 'required|integer',
+                'match_type' => 'required|string'
+            ]);
+
+            $playerId = $request->player_id;
+            $teamId = $request->team_id;
+            $matchType = $request->match_type;
+
+            \Log::info('Force refreshing player statistics', [
+                'player_id' => $playerId,
+                'team_id' => $teamId,
+                'match_type' => $matchType
+            ]);
+
+            // Get fresh hero success rate stats
+            $heroStats = $this->getHeroSuccessRateStats($playerId, $teamId, $matchType);
+            
+            // Get fresh H2H stats
+            $h2hStats = $this->getH2HStatsData($playerId, $teamId, $matchType);
+
+            return response()->json([
+                'success' => true,
+                'hero_stats' => $heroStats,
+                'h2h_stats' => $h2hStats,
+                'timestamp' => now()->toISOString()
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error force refreshing player statistics: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to refresh player statistics'
+            ], 500);
+        }
+    }
+
+    /**
      * Handle lane changes for a match
      */
     public function updateLaneChanges(Request $request)

@@ -442,25 +442,25 @@ class GameMatchController extends Controller
                 }
             }
 
-            // Detect and process lane changes
+            // Always re-sync statistics after match updates to ensure real-time updates
             try {
-                $laneChangeDetector = new \App\Services\LaneChangeDetector();
-                $laneChanges = $laneChangeDetector->detectLaneChanges($match, $validated['teams']);
+                \Log::info('Re-syncing statistics after match update', ['match_id' => $match->id]);
                 
-                if (!empty($laneChanges)) {
-                    \Log::info('Processing detected lane changes', [
-                        'match_id' => $match->id,
-                        'changes_count' => count($laneChanges)
-                    ]);
-                    
-                    $laneChangeDetector->processLaneChanges($match, $laneChanges);
-                }
+                // Clear existing statistics for this match
+                \App\Models\HeroSuccessRate::where('match_id', $match->id)->delete();
+                \App\Models\H2HStatistics::where('match_id', $match->id)->delete();
+                
+                // Re-sync the match statistics
+                $syncService = new \App\Services\StatisticsSyncService();
+                $syncService->syncMatchStatistics($match);
+                
+                \Log::info('Statistics re-synced successfully', ['match_id' => $match->id]);
             } catch (\Exception $e) {
-                \Log::error('Failed to process lane changes', [
+                \Log::error('Failed to re-sync statistics', [
                     'match_id' => $match->id,
                     'error' => $e->getMessage()
                 ]);
-                // Don't fail the match update if lane change processing fails
+                // Don't fail the match update if statistics sync fails
             }
 
             // Return the fresh match with its new teams
