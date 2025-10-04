@@ -13,40 +13,6 @@ use App\Http\Controllers\Api\NotesController;
 use App\Http\Controllers\Api\DraftController;
 use App\Http\Controllers\Api\MobadraftController;
 
-// CRITICAL: Player assignments routes MUST come first to avoid conflicts with apiResource
-Route::get('/matches/player-assignments/{teamId}', [PlayerController::class, 'getPlayerAssignments']);
-Route::get('/player-assignments/{teamId}', [PlayerController::class, 'getPlayerAssignments']);
-
-// Alternative simple route for debugging
-Route::get('/get-players/{teamId}', function ($teamId) {
-    try {
-        $players = \App\Models\Player::where('team_id', $teamId)
-            ->orderBy('role')
-            ->get();
-
-        $assignments = [];
-        foreach ($players as $player) {
-            $assignments[$player->role] = [
-                'id' => $player->id,
-                'name' => $player->name,
-                'role' => $player->role
-            ];
-        }
-
-        return response()->json([
-            'success' => true,
-            'assignments' => $assignments,
-            'team_id' => $teamId,
-            'route' => 'simple-get-players'
-        ]);
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'error' => 'Failed to get player assignments: ' . $e->getMessage(),
-            'team_id' => $teamId
-        ], 500);
-    }
-});
 
 // Test routes
 Route::get('/test', function () {
@@ -560,11 +526,38 @@ Route::post('/matches/{matchId}/resync-statistics', [PlayerController::class, 'r
 // Force refresh player statistics
 Route::post('/players/refresh-statistics', [PlayerController::class, 'refreshPlayerStatistics']);
 
+// Simple player assignments route - using existing working route pattern
+Route::get('/players/assignments/{teamId}', function ($teamId) {
+    try {
+        $players = \App\Models\Player::where('team_id', $teamId)
+            ->orderBy('role')
+            ->get();
+
+        $assignments = [];
+        foreach ($players as $player) {
+            $assignments[$player->role] = [
+                'id' => $player->id,
+                'name' => $player->name,
+                'role' => $player->role
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'assignments' => $assignments,
+            'team_id' => $teamId
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => 'Failed to get player assignments: ' . $e->getMessage(),
+            'team_id' => $teamId
+        ], 500);
+    }
+});
+
 // Team routes (with session support)
 Route::middleware('enable-sessions')->group(function () {
-    // CRITICAL: Player assignments route MUST come before apiResource
-    Route::get('/matches/player-assignments/{teamId}', [PlayerController::class, 'getPlayerAssignments']);
-    
     // Matches endpoints (moved here to access session data)
     Route::apiResource('matches', GameMatchController::class);
     Route::get('/matches/{id}/sync', [GameMatchController::class, 'show']);
