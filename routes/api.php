@@ -519,6 +519,9 @@ Route::post('/matches/{matchId}/resync-statistics', [PlayerController::class, 'r
 // Force refresh player statistics
 Route::post('/players/refresh-statistics', [PlayerController::class, 'refreshPlayerStatistics']);
 
+// Get player assignments for a team
+Route::get('/matches/player-assignments/{teamId}', [PlayerController::class, 'getPlayerAssignments']);
+
 // Team routes (with session support)
 Route::middleware('enable-sessions')->group(function () {
     // Matches endpoints (moved here to access session data)

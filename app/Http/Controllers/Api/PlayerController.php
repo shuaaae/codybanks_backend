@@ -1790,6 +1790,38 @@ class PlayerController extends Controller
     }
 
     /**
+     * Get player assignments for a team
+     */
+    public function getPlayerAssignments($teamId)
+    {
+        try {
+            $players = \App\Models\Player::where('team_id', $teamId)
+                ->orderBy('role')
+                ->get();
+
+            $assignments = [];
+            foreach ($players as $player) {
+                $assignments[$player->role] = [
+                    'id' => $player->id,
+                    'name' => $player->name,
+                    'role' => $player->role
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'assignments' => $assignments
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error getting player assignments: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to get player assignments'
+            ], 500);
+        }
+    }
+
+    /**
      * Handle lane changes for a match
      */
     public function updateLaneChanges(Request $request)
