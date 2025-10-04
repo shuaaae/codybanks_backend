@@ -18,6 +18,9 @@ Route::get('/test', function () {
     return response()->json(['message' => 'API is working']);
 });
 
+// Get player assignments for a team
+Route::get('/matches/player-assignments/{teamId}', [PlayerController::class, 'getPlayerAssignments']);
+
 // Hero image route to serve images from local storage
 Route::get('/hero-image/{role}/{image}', function ($role, $image) {
     try {
@@ -518,9 +521,6 @@ Route::post('/matches/{matchId}/resync-statistics', [PlayerController::class, 'r
 
 // Force refresh player statistics
 Route::post('/players/refresh-statistics', [PlayerController::class, 'refreshPlayerStatistics']);
-
-// Get player assignments for a team
-Route::get('/matches/player-assignments/{teamId}', [PlayerController::class, 'getPlayerAssignments']);
 
 // Team routes (with session support)
 Route::middleware('enable-sessions')->group(function () {

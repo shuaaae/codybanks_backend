@@ -241,15 +241,44 @@ class StatisticsSyncService
                 ->where('team_id', $teamId)
                 ->first();
             if ($player) {
+                Log::info("Found player by name", [
+                    'player_name' => $playerName,
+                    'player_id' => $player->id,
+                    'player_role' => $player->role,
+                    'lane' => $lane
+                ]);
                 return $player;
+            } else {
+                Log::warning("Player not found by name", [
+                    'player_name' => $playerName,
+                    'team_id' => $teamId,
+                    'lane' => $lane
+                ]);
             }
         }
         
         // Fallback to role matching
         $role = $this->mapLaneToRole($lane);
-        return Player::where('role', $role)
+        $player = Player::where('role', $role)
             ->where('team_id', $teamId)
             ->first();
+            
+        if ($player) {
+            Log::info("Found player by role fallback", [
+                'role' => $role,
+                'player_id' => $player->id,
+                'player_name' => $player->name,
+                'lane' => $lane
+            ]);
+        } else {
+            Log::error("No player found for lane", [
+                'lane' => $lane,
+                'role' => $role,
+                'team_id' => $teamId
+            ]);
+        }
+        
+        return $player;
     }
     
     /**

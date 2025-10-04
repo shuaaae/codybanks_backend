@@ -196,6 +196,9 @@ class GameMatchController extends Controller
                 // Get the team ID for the current team
                 $currentTeamId = $validated['team_id'] ?? $teamId;
                 
+                // Update picks data with specific player assignments
+                $this->updatePicksWithPlayerAssignments($match->id, $validated['player_assignments']);
+                
                 // Process blue team assignments
                 if (isset($validated['player_assignments']['blue']) && is_array($validated['player_assignments']['blue'])) {
                     $this->processPlayerAssignments($match->id, $currentTeamId, $validated['player_assignments']['blue'], 'blue');
@@ -707,5 +710,101 @@ class GameMatchController extends Controller
                 ]);
             }
         }
+    }
+
+    /**
+     * Update picks data with specific player assignments
+     */
+    private function updatePicksWithPlayerAssignments($matchId, $playerAssignments)
+    {
+        try {
+            \Log::info("Updating picks with player assignments", [
+                'match_id' => $matchId,
+                'player_assignments' => $playerAssignments
+            ]);
+
+            // Get the match teams
+            $matchTeams = \App\Models\MatchTeam::where('match_id', $matchId)->get();
+
+            foreach ($matchTeams as $matchTeam) {
+                $teamColor = $matchTeam->team_color;
+                
+                if (!isset($playerAssignments[$teamColor])) {
+                    continue;
+                }
+
+                $assignments = $playerAssignments[$teamColor];
+                
+                // Update picks1
+                $updatedPicks1 = [];
+                foreach ($matchTeam->picks1 as $pick) {
+                    if (isset($pick['lane'])) {
+                        // Find the player assigned to this lane
+                        $assignedPlayer = null;
+                        foreach ($assignments as $assignment) {
+                            if (isset($assignment['role']) && $this->mapLaneToRole($pick['lane']) === $assignment['role']) {
+                                $assignedPlayer = $assignment['name'];
+                                break;
+                            }
+                        }
+                        
+                        $pick['player'] = $assignedPlayer ?? $pick['player'];
+                    }
+                    $updatedPicks1[] = $pick;
+                }
+
+                // Update picks2
+                $updatedPicks2 = [];
+                foreach ($matchTeam->picks2 as $pick) {
+                    if (isset($pick['lane'])) {
+                        // Find the player assigned to this lane
+                        $assignedPlayer = null;
+                        foreach ($assignments as $assignment) {
+                            if (isset($assignment['role']) && $this->mapLaneToRole($pick['lane']) === $assignment['role']) {
+                                $assignedPlayer = $assignment['name'];
+                                break;
+                            }
+                        }
+                        
+                        $pick['player'] = $assignedPlayer ?? $pick['player'];
+                    }
+                    $updatedPicks2[] = $pick;
+                }
+
+                // Update the match team with corrected picks
+                $matchTeam->update([
+                    'picks1' => $updatedPicks1,
+                    'picks2' => $updatedPicks2
+                ]);
+
+                \Log::info("Updated picks for team", [
+                    'team' => $matchTeam->team,
+                    'team_color' => $teamColor,
+                    'updated_picks1' => $updatedPicks1,
+                    'updated_picks2' => $updatedPicks2
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Log::error("Failed to update picks with player assignments", [
+                'match_id' => $matchId,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Map lane to role for player assignment matching
+     */
+    private function mapLaneToRole($lane)
+    {
+        $mapping = [
+            'exp' => 'exp',
+            'jungler' => 'jungler',
+            'mid' => 'mid',
+            'gold' => 'gold',
+            'roam' => 'roam'
+        ];
+        
+        return $mapping[strtolower($lane)] ?? $lane;
     }
 }
