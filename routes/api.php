@@ -13,6 +13,10 @@ use App\Http\Controllers\Api\NotesController;
 use App\Http\Controllers\Api\DraftController;
 use App\Http\Controllers\Api\MobadraftController;
 
+// CRITICAL: Player assignments routes MUST come first to avoid conflicts with apiResource
+Route::get('/matches/player-assignments/{teamId}', [PlayerController::class, 'getPlayerAssignments']);
+Route::get('/player-assignments/{teamId}', [PlayerController::class, 'getPlayerAssignments']);
+
 // Test routes
 Route::get('/test', function () {
     return response()->json(['message' => 'API is working']);
@@ -23,14 +27,6 @@ Route::get('/test-player-assignments', function () {
     return response()->json(['message' => 'Player assignments route is working']);
 });
 
-// Player assignments routes - wrapped in group to ensure proper registration
-Route::group([], function () {
-    // Get player assignments for a team
-    Route::get('/matches/player-assignments/{teamId}', [PlayerController::class, 'getPlayerAssignments']);
-    
-    // Alternative route with different path structure
-    Route::get('/player-assignments/{teamId}', [PlayerController::class, 'getPlayerAssignments']);
-});
 
 // Hero image route to serve images from local storage
 Route::get('/hero-image/{role}/{image}', function ($role, $image) {
