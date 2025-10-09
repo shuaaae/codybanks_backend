@@ -196,6 +196,9 @@ class GameMatchController extends Controller
                 // Get the team ID for the current team
                 $currentTeamId = $validated['team_id'] ?? $teamId;
                 
+                // CRITICAL: Validate that all players belong to the correct team
+                $this->validatePlayerTeamAssignments($validated['player_assignments'], $currentTeamId);
+                
                 // Update picks data with specific player assignments
                 $this->updatePicksWithPlayerAssignments($match->id, $validated['player_assignments']);
                 
@@ -710,6 +713,51 @@ class GameMatchController extends Controller
                 ]);
             }
         }
+    }
+
+    /**
+     * Validate that all players belong to the correct team
+     */
+    private function validatePlayerTeamAssignments($playerAssignments, $teamId)
+    {
+        $allPlayers = [];
+        
+        // Collect all players from both teams
+        if (isset($playerAssignments['blue']) && is_array($playerAssignments['blue'])) {
+            foreach ($playerAssignments['blue'] as $player) {
+                if (isset($player['name'])) {
+                    $allPlayers[] = $player['name'];
+                }
+            }
+        }
+        
+        if (isset($playerAssignments['red']) && is_array($playerAssignments['red'])) {
+            foreach ($playerAssignments['red'] as $player) {
+                if (isset($player['name'])) {
+                    $allPlayers[] = $player['name'];
+                }
+            }
+        }
+        
+        // Check each player belongs to the correct team
+        foreach ($allPlayers as $playerName) {
+            $player = \App\Models\Player::where('name', $playerName)
+                ->where('team_id', $teamId)
+                ->first();
+            
+            if (!$player) {
+                \Log::error("SECURITY VIOLATION: Player does not belong to team", [
+                    'player_name' => $playerName,
+                    'team_id' => $teamId
+                ]);
+                throw new \Exception("Player '{$playerName}' does not belong to team ID {$teamId}");
+            }
+        }
+        
+        \Log::info("Player team validation passed", [
+            'team_id' => $teamId,
+            'players_checked' => count($allPlayers)
+        ]);
     }
 
     /**
