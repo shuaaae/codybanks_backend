@@ -789,6 +789,12 @@ class HeroSeeder extends Seeder
                   'role' => 'Tank',
                   'image' => 'Uranus.webp',
                 ),
+                130 =>
+                array (
+                  'name' => 'Sora',
+                  'role' => 'Fighter',
+                  'image' => 'Sora.webp',
+                ),
             );
     
             // Create heroes in the database
